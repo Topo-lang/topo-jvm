@@ -1,0 +1,15 @@
+// Observability benchmark — staged functions instrumented with JFR events.
+
+namespace app {
+  public:
+    void runFriendly();
+
+    fn runFriendly {
+      stage<1> processData();
+      stage<2> aggregateResults();
+    }
+
+  private:
+    void processData();
+    void aggregateResults();
+}

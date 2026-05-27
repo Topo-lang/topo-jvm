@@ -1,0 +1,12 @@
+// DataLayout benchmark — single-field sweep vs multi-field sequential on Array<Particle>.
+// DataLayoutPass transforms Array<Particle> internal storage to SoA.
+// Friendly: single-field sweep where contiguous float[] enables C2 vectorization.
+// Unfriendly: multi-field sequential where AoS locality is already adequate.
+
+namespace app {
+  public:
+    void runFriendly();
+    void runUnfriendly();
+
+  private:
+}

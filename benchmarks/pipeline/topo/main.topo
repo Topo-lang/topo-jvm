@@ -1,0 +1,24 @@
+// Pipeline benchmark — fork/join DAG.
+// parse → enhance AND parse → detect (parallel branches)
+// enhance → compose, detect → compose (join)
+
+using Int = std::cpp17::int;
+
+namespace app {
+  public:
+    Int process(Int input);
+
+    fn process {
+      parse -> enhance;
+      parse -> detect;
+      enhance -> compose;
+      detect -> compose;
+      compose -> Int;
+    }
+
+  private:
+    Int parse(Int input);
+    Int enhance(Int data);
+    Int detect(Int data);
+    Int compose(Int enhanced, Int detected);
+}

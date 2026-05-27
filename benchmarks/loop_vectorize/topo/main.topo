@@ -1,0 +1,18 @@
+// LoopVectorize benchmark — streaming arithmetic loops in parallel stage.
+// scaleAndAdd and reduceSum are in the same stage → parallel-stage functions.
+
+namespace app {
+  public:
+    void runFriendly();
+
+    fn runFriendly {
+      stage<1> scaleAndAdd();
+      stage<1> reduceSum();
+      stage<1> gatheredSum();
+    }
+
+  private:
+    void scaleAndAdd();
+    void reduceSum();
+    void gatheredSum();
+}

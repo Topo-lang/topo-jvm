@@ -1,0 +1,21 @@
+[project]
+name = "java_observability"
+
+[topo]
+root = "topo/main.topo"
+
+[build]
+language = "java"
+sources = ["src/main/java"]
+output = "java_observability.jar"
+output_type = "exe"
+
+[build.java]
+target_version = "21"
+
+[observability]
+mode = "force"
+exporter = "stdout"
+
+[builder]
+mode = "dev"

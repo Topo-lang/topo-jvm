@@ -1,0 +1,20 @@
+[project]
+name = "java_type_narrowing_base"
+
+[topo]
+root = "topo/main.topo"
+
+[build]
+language = "java"
+sources = ["src/main/java"]
+output = "java_type_narrowing_base.jar"
+output_type = "exe"
+
+[build.java]
+target_version = "21"
+
+[optimize.type-narrowing]
+mode = "off"
+
+[builder]
+mode = "dev"

@@ -1,0 +1,19 @@
+[project]
+name = "java_obfuscation"
+
+[topo]
+root = "topo/main.topo"
+
+[build]
+language = "java"
+sources = ["src/main/java"]
+output = "java_obfuscation.jar"
+output_type = "exe"
+
+[build.java]
+target_version = "21"
+
+[builder]
+mode = "dev"
+obfuscation = "salted"
+obfuscation_salt = "topo-e2e-test"

@@ -1,0 +1,30 @@
+// Obfuscation benchmark — internal symbols renamed, public preserved.
+//
+// The Base/Sub pair pins override-chain preservation (issue
+// jvm-obfuscation-and-method-key-design-gaps): `polyValue` is
+// non-public, so the obfuscator renames it; Sub.polyValue must hash
+// to the same slot as Base.polyValue or the runtime override breaks.
+
+using Int = std::cpp17::int;
+
+namespace app {
+  public:
+    type Main {
+      public:
+        void run();
+        Int getResult();
+      private:
+        void internalHelper(Int x);
+        Int secretCompute(Int a, Int b);
+    }
+
+    type Base {
+      internal:
+        Int polyValue();
+    }
+
+    type Sub {
+      internal:
+        Int polyValue();
+    }
+}

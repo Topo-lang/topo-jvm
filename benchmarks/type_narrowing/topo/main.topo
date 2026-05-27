@@ -1,0 +1,12 @@
+// TypeNarrowing benchmark — Array.get() virtual call elimination.
+// TypeNarrowingPass replaces Array.get(i)+CHECKCAST with rawData()[i]+AALOAD+CHECKCAST.
+// Friendly: tight loop with Array.get(i) — virtual call overhead dominates.
+// Unfriendly: single random access — virtual call cost negligible.
+
+namespace app {
+  public:
+    void runFriendly();
+    void runUnfriendly();
+
+  private:
+}

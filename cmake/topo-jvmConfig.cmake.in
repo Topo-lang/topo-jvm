@@ -1,0 +1,30 @@
+@PACKAGE_INIT@
+
+# topo-jvm CMake package config.
+#
+# Consumers do:
+#     find_package(topo-jvm CONFIG REQUIRED)
+#     # then use the installed runtime/transformer JAR data files via
+#     # the share/topo-jvm/lib/ directory (see TOPO_JVM_LIBDIR var below).
+#
+# topo-jvm exports the topo-build-jvm-java executable (when
+# TOPO_JVM_BUILD_TOOLS=ON at build time) plus the Gradle-built
+# topo-transform.jar / topo-decompile-jvm.jar data files (when
+# TOPO_JVM_BUILD_TRANSFORM / DECOMPILE were ON at build time).
+
+include(CMakeFindDependencyMacro)
+
+if(NOT TARGET topo::core::TopoAST)
+    find_dependency(topo-core CONFIG)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/topo-jvmTargets.cmake")
+
+# Locate the Gradle-built JAR data files, if installed.
+set(_TOPO_JVM_LIBDIR "${PACKAGE_PREFIX_DIR}/share/topo-jvm/lib")
+if(IS_DIRECTORY "${_TOPO_JVM_LIBDIR}")
+    set(TOPO_JVM_LIBDIR "${_TOPO_JVM_LIBDIR}"
+        CACHE PATH "Directory containing topo-jvm's Gradle-built JARs")
+endif()
+
+check_required_components(topo-jvm)

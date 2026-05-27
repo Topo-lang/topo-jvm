@@ -1,0 +1,23 @@
+[project]
+name = "java_prefetch_base"
+
+[topo]
+root = "topo/main.topo"
+
+[build]
+language = "java"
+sources = ["src/main/java"]
+output = "java_prefetch_base.jar"
+output_type = "exe"
+
+[build.java]
+target_version = "21"
+
+[optimize.prefetch]
+mode = "off"
+
+[optimize.type-narrowing]
+mode = "force"
+
+[builder]
+mode = "dev"

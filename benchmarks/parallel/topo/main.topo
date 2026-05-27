@@ -1,0 +1,21 @@
+// Parallel benchmark — 4 independent tasks in same stage.
+// ParallelPass parallelizes runFriendly (stage<1> x4).
+// runUnfriendly is not declared → not transformed.
+
+namespace app {
+  public:
+    void runFriendly();
+
+    fn runFriendly {
+      stage<1> taskA();
+      stage<1> taskB();
+      stage<1> taskC();
+      stage<1> taskD();
+    }
+
+  private:
+    void taskA();
+    void taskB();
+    void taskC();
+    void taskD();
+}

@@ -1,0 +1,17 @@
+// Lifetime arena benchmark — arena-managed scope for allocation-heavy code.
+
+namespace app {
+  public:
+    void runFriendly();
+
+    fn runFriendly {
+      stage<1> allocWork();
+      stage<2> sumWork();
+    }
+
+    lifetime arena_scope = allocWork..sumWork;
+
+  private:
+    void allocWork();
+    void sumWork();
+}

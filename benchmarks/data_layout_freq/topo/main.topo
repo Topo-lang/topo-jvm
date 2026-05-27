@@ -1,0 +1,11 @@
+// DataLayout high-frequency benchmark — repeated single-field access per iteration.
+// Friendly: 10 accesses to .x per element → ratio exceeds threshold, SoA triggers.
+// Unfriendly: 1 access to .x per element → ratio below threshold, SoA skipped.
+
+namespace app {
+  public:
+    void runFriendly();
+    void runUnfriendly();
+
+  private:
+}

@@ -1,0 +1,32 @@
+# Build artifacts
+/build/
+/build-*/
+
+# vcpkg
+vcpkg_installed/
+
+# Gradle
+**/.gradle/
+**/build/
+!CMakeLists.txt
+
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*~
+.vscode/
+.idea/
+
+# Benchmark build artifacts (produced by topo-build under benchmarks/<proj>/)
+benchmarks/*/.topo-cache/
+benchmarks/*/*.jar
+benchmarks/*/*.topo-passes/
+benchmarks/*/*.topo-bench/

@@ -1,0 +1,20 @@
+[project]
+name = "java_data_layout"
+
+[topo]
+root = "topo/main.topo"
+
+[build]
+language = "java"
+sources = ["src/main/java"]
+output = "java_data_layout.jar"
+output_type = "exe"
+
+[build.java]
+target_version = "21"
+
+[optimize.data-layout]
+mode = "force"
+
+[builder]
+mode = "dev"

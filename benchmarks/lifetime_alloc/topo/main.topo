@@ -1,0 +1,18 @@
+// Lifetime arena allocation replacement benchmark.
+// Tests NEWARRAY → Arena.allocateXxxArray replacement.
+
+namespace app {
+  public:
+    void runFriendly();
+
+    fn runFriendly {
+      stage<1> hotFloatAlloc();
+      stage<2> hotIntAlloc();
+    }
+
+    lifetime alloc_scope = hotFloatAlloc..hotIntAlloc;
+
+  private:
+    void hotFloatAlloc();
+    void hotIntAlloc();
+}

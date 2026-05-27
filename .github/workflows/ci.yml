@@ -1,0 +1,213 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pin the upstream Topo refs this build is tested against.
+  TOPO_CORE_REF: main
+  TOPO_LANG_REF: main
+  TOPO_LANG_JAVA_REF: main
+
+jobs:
+  build-and-test:
+    name: build + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
+
+      - name: Install build deps (macos)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      # JDK 17 covers both the bundled Gradle wrappers (gradle-9.5.1+
+      # supports JDK 17) and the topo-build-jvm-java backend tool's javac
+      # invocation at run time.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Export GHA cache env (for vcpkg x-gha backend)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: "56bb2411609227288b70117ead2c47585ba07713"
+
+      - name: Cache upstream topo install
+        id: topo-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/topo-install
+          key: topo-core-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-${{ matrix.os }}-v3
+
+      - name: Build & install topo-core (zero-LLVM, lang-less)
+        if: steps.topo-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "${TOPO_CORE_REF}" \
+              https://github.com/topo-lang/topo-core.git \
+              "${RUNNER_TEMP}/topo-core-src"
+          cmake -S "${RUNNER_TEMP}/topo-core-src" \
+                -B "${RUNNER_TEMP}/topo-core-build" \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+                -DTOPO_ENABLE_LLVM=OFF
+          cmake --build "${RUNNER_TEMP}/topo-core-build" --target install
+
+      - name: Build & install topo-lang
+        if: steps.topo-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "${TOPO_LANG_REF}" \
+              https://github.com/topo-lang/topo-lang.git \
+              "${RUNNER_TEMP}/topo-lang-src"
+          cmake -S "${RUNNER_TEMP}/topo-lang-src" \
+                -B "${RUNNER_TEMP}/topo-lang-build" \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          cmake --build "${RUNNER_TEMP}/topo-lang-build" --target install
+
+      - name: Re-install topo-core (with-lang)
+        if: steps.topo-cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S "${RUNNER_TEMP}/topo-core-src" \
+                -B "${RUNNER_TEMP}/topo-core-build" \
+                -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install"
+          cmake --build "${RUNNER_TEMP}/topo-core-build" --target install
+
+      - name: Build & install topo-lang-java
+        if: steps.topo-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "${TOPO_LANG_JAVA_REF}" \
+              https://github.com/topo-lang/topo-lang-java.git \
+              "${RUNNER_TEMP}/topo-lang-java-src"
+          cmake -S "${RUNNER_TEMP}/topo-lang-java-src" \
+                -B "${RUNNER_TEMP}/topo-lang-java-build" \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+                -DTOPO_LANG_JAVA_BUILD_TESTS=OFF
+          cmake --build "${RUNNER_TEMP}/topo-lang-java-build" --target install
+
+      - name: Configure topo-jvm
+        # The bundled Gradle wrappers (transform/gradlew + decompile/gradlew)
+        # produce topo-transform.jar and topo-decompile-jvm-1.0.0.jar via
+        # CMake custom commands; setup-java already exported JAVA_HOME, so
+        # Gradle resolves a usable JDK.
+        #
+        # Windows: the Gradle subprojects (transform + decompile) hang
+        # mid-build at ~20+ min on this runner, while macOS/ubuntu finish
+        # the same step in ~2 min. Gate them OFF for Windows CI so the C++
+        # toolchain side (topo-build-jvm-java) still ships; the JARs are
+        # exercised on the other two platforms and in monorepo CI.
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            GRADLE_ARGS="-DTOPO_JVM_BUILD_TRANSFORM=OFF -DTOPO_JVM_BUILD_DECOMPILE=OFF"
+          else
+            GRADLE_ARGS=""
+          fi
+          cmake -S . -B build -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
+              -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+              -DTOPO_JVM_BUILD_TESTS=ON \
+              ${GRADLE_ARGS}
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 120
+
+      - name: Install topo-jvm
+        run: cmake --install build --prefix "${RUNNER_TEMP}/jvm-install"
+
+      - name: find_package smoke
+        run: |
+          mkdir -p "${RUNNER_TEMP}/find-package-smoke"
+          cd "${RUNNER_TEMP}/find-package-smoke"
+          cat > vcpkg.json <<'JSON'
+          {
+            "name": "topo-jvm-smoke",
+            "version-string": "0.0.1",
+            "builtin-baseline": "56bb2411609227288b70117ead2c47585ba07713",
+            "dependencies": ["nlohmann-json"]
+          }
+          JSON
+          cat > CMakeLists.txt <<'CMAKE'
+          cmake_minimum_required(VERSION 3.20)
+          project(topo-jvm-find-package-smoke LANGUAGES CXX)
+          set(CMAKE_CXX_STANDARD 17)
+          find_package(topo-jvm CONFIG REQUIRED)
+          if(NOT TARGET topo::jvm::topo-build-jvm-java)
+              message(FATAL_ERROR "topo::jvm::topo-build-jvm-java target was not imported")
+          endif()
+          add_executable(smoke smoke.cpp)
+          target_compile_definitions(smoke PRIVATE
+              TOPO_BUILD_JVM_JAVA_EXE="$<TARGET_FILE:topo::jvm::topo-build-jvm-java>"
+              TOPO_TRANSFORM_JAR="${TOPO_JVM_LIBDIR}/topo-transform.jar"
+              TOPO_DECOMPILE_JAR="${TOPO_JVM_LIBDIR}/topo-decompile-jvm-1.0.0.jar")
+          if(MINGW)
+              target_link_options(smoke PRIVATE -static -static-libgcc -static-libstdc++)
+          endif()
+          CMAKE
+          cat > smoke.cpp <<'CPP'
+          #include <cstdio>
+          #include <filesystem>
+          int main() {
+              namespace fs = std::filesystem;
+              if (!fs::exists(TOPO_BUILD_JVM_JAVA_EXE)) return 1;
+              // Gradle subprojects are gated OFF on Windows CI for now;
+              // the JARs won't exist there. Only require them when the
+              // build produced them.
+              #ifndef _WIN32
+              if (!fs::exists(TOPO_TRANSFORM_JAR)) return 1;
+              if (!fs::exists(TOPO_DECOMPILE_JAR)) return 1;
+              #endif
+              std::printf("topo-jvm find_package OK\n");
+              return 0;
+          }
+          CPP
+          cmake -S . -B build -G Ninja \
+              -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/jvm-install;${RUNNER_TEMP}/topo-install" \
+              -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          cmake --build build
+          # bash on Windows + MinGW doesn't always resolve ./build/smoke
+          # to .exe; pick the right name explicitly.
+          if [ "${{ runner.os }}" = "Windows" ]; then
+              ./build/smoke.exe
+          else
+              ./build/smoke
+          fi

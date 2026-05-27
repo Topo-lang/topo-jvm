@@ -1,0 +1,19 @@
+// Java stages benchmark — verifies stage ordering enforcement.
+
+using Int = std::cpp17::int;
+
+namespace app {
+  public:
+    void run();
+
+    fn run {
+      stage<1> init();
+      stage<2> process(0);
+      stage<3> finalize(0);
+    }
+
+  private:
+    Int init();
+    Int process(Int data);
+    void finalize(Int result);
+}

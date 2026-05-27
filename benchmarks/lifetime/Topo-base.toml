@@ -1,0 +1,20 @@
+[project]
+name = "java_lifetime_base"
+
+[topo]
+root = "topo/main.topo"
+
+[build]
+language = "java"
+sources = ["src/main/java"]
+output = "java_lifetime_base.jar"
+output_type = "exe"
+
+[build.java]
+target_version = "21"
+
+[lifetime]
+mode = "off"
+
+[builder]
+mode = "dev"

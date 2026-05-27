@@ -1,0 +1,15 @@
+// Adaptive benchmark — staged functions instrumented with checkDispatch.
+
+namespace app {
+  public:
+    void runFriendly();
+
+    fn runFriendly {
+      stage<1> computeA();
+      stage<2> computeB();
+    }
+
+  private:
+    void computeA();
+    void computeB();
+}

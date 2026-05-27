@@ -1,0 +1,17 @@
+// Java visibility benchmark
+
+using Int = std::cpp17::int;
+
+namespace app {
+  public:
+    type Main {
+        public:
+            void run();
+            Int getResult();
+        protected:
+            void logOperation(Int result);
+        private:
+            void resetState();
+            Int helperCompute(Int a, Int b);
+    }
+}

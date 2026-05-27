@@ -1,0 +1,12 @@
+// Prefetch benchmark — software prefetch hints in streaming loops.
+// PrefetchPass inserts Prefetch.prefetchArray() calls in counted loops.
+// Friendly: streaming sequential scan over large Array<Particle> — prefetch hides latency.
+// Unfriendly: random access pattern — prefetch wastes bandwidth.
+
+namespace app {
+  public:
+    void runFriendly() -> access(streaming);
+    void runUnfriendly() -> access(random);
+
+  private:
+}

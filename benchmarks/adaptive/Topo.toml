@@ -1,0 +1,26 @@
+[project]
+name = "java_adaptive"
+
+[topo]
+root = "topo/main.topo"
+
+[build]
+language = "java"
+sources = ["src/main/java"]
+output = "java_adaptive.jar"
+output_type = "exe"
+embed_ir = true
+
+[build.java]
+target_version = "21"
+
+[parallel]
+mode = "force"
+instrument = true
+
+[adaptive]
+mode = "force"
+min_trigger_ns = 10000
+
+[builder]
+mode = "dev"
