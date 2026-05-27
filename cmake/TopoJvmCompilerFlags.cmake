@@ -39,5 +39,7 @@ function(topo_set_compiler_flags target)
 endfunction()
 
 # PCH helpers — no-ops in standalone (no project-wide PCH host).
-function(topo_apply_std_pch target)
-endfunction()
+if(NOT COMMAND topo_apply_std_pch)
+    function(topo_apply_std_pch target)
+    endfunction()
+endif()

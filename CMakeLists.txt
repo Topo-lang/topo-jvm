@@ -14,7 +14,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(TopoJvmCompilerFlags)
 
 # ── Upstream Topo packages ──────────────────────────────
-find_package(topo-core CONFIG REQUIRED)
+if(NOT TARGET topo::core::TopoBasic)
+    find_package(topo-core CONFIG REQUIRED)
+endif()
 
 # ── External dependencies ───────────────────────────────
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -99,7 +101,9 @@ if(TOPO_JVM_BUILD_TRANSFORM OR TOPO_JVM_BUILD_DECOMPILE)
 endif()
 
 if(TOPO_JVM_BUILD_TOOLS)
-    find_package(topo-lang-java CONFIG REQUIRED)
+    if(NOT TARGET topo::lang-java::TopoJavaPlugin)
+        find_package(topo-lang-java CONFIG REQUIRED)
+    endif()
 endif()
 
 # ── deploy-topo-runtime-java pre-flight ────────────────
@@ -228,7 +232,7 @@ install(FILES
 )
 
 # ── Tests ───────────────────────────────────────────────
-if(TOPO_JVM_BUILD_TESTS AND PROJECT_IS_TOP_LEVEL)
+if(TOPO_JVM_BUILD_TESTS AND (PROJECT_IS_TOP_LEVEL OR TOPO_META_DRIVING_TESTS))
     enable_testing()
     include(FetchContent)
     FetchContent_Declare(googletest
@@ -259,8 +263,10 @@ endif()
 # (the rest of the e2e suite still runs; topo-build-jvm-java just won't
 # have topo-runtime.jar staged next to it, which only affects user
 # workflows that link the runtime).
-if(TOPO_JVM_BUILD_E2E AND TOPO_JVM_BUILD_TESTS AND PROJECT_IS_TOP_LEVEL)
-    find_package(topo-cli CONFIG)
+if(TOPO_JVM_BUILD_E2E AND TOPO_JVM_BUILD_TESTS AND (PROJECT_IS_TOP_LEVEL OR TOPO_META_DRIVING_TESTS))
+    if(NOT TARGET topo::cli::topo-build)
+        find_package(topo-cli CONFIG QUIET)
+    endif()
 
     # Probe a runtime JDK ≥21 for the e2e suite. topo-transform.jar is
     # compiled to JDK 21 class files (Gradle 8.14's auto-downloaded

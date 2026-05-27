@@ -16,7 +16,7 @@ if(NOT TARGET topo::cli::topo-build)
         "ensure find_package(topo-cli CONFIG) at top level succeeded.")
 endif()
 
-include(${CMAKE_SOURCE_DIR}/cmake/TopoBenchArtifacts.cmake)
+include(${PROJECT_SOURCE_DIR}/cmake/TopoBenchArtifacts.cmake)
 
 # Excludes mirror the monorepo's lift list — orphan benchmark projects
 # whose Topo.toml exists but whose feature has no associated TEST_F in

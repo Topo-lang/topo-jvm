@@ -87,7 +87,7 @@ gtest_discover_tests(topo-e2e-java DISCOVERY_TIMEOUT 30
         LABELS "e2e;java"
         TIMEOUT 180
 )
-include(${CMAKE_SOURCE_DIR}/cmake/TopoE2eProjectLocks.cmake)
+include(${PROJECT_SOURCE_DIR}/cmake/TopoE2eProjectLocks.cmake)
 topo_inject_e2e_project_locks(
     SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/JavaFunctionalTests.cpp"
     FIXTURE JavaFunctional
@@ -154,7 +154,7 @@ gtest_discover_tests(topo-e2e-jvm-bench DISCOVERY_TIMEOUT 30
     DISCOVERY_MODE POST_BUILD
 )
 
-include(${CMAKE_SOURCE_DIR}/cmake/TopoBenchCategoryLabels.cmake)
+include(${PROJECT_SOURCE_DIR}/cmake/TopoBenchCategoryLabels.cmake)
 topo_inject_bench_category_labels(${CMAKE_CURRENT_SOURCE_DIR}/JvmBenchmarkTests.cpp)
 
 # --- JVM Equivalence ---
@@ -176,7 +176,7 @@ gtest_discover_tests(topo-e2e-jvm-equiv DISCOVERY_TIMEOUT 30
         LABELS "e2e;equivalence;jvm_equivalence"
         TIMEOUT 300
 )
-include(${CMAKE_SOURCE_DIR}/cmake/TopoE2eProjectLocks.cmake)
+include(${PROJECT_SOURCE_DIR}/cmake/TopoE2eProjectLocks.cmake)
 topo_inject_e2e_project_locks(
     SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/JvmEquivalenceTests.cpp"
     FIXTURE JvmEquivalence
