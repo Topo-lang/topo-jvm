@@ -9,6 +9,8 @@
 
 #include <gtest/gtest.h>
 
+#include "topo/Platform/Process.h"
+
 namespace fs = std::filesystem;
 
 namespace topo::test::e2e {
@@ -17,6 +19,15 @@ struct RunResult {
     int exitCode = -1;
     std::string output;
 };
+
+// Merge stdout + stderr from a captured subprocess into a single diagnostic
+// string for RunResult::output. Previously the harness discarded stderr,
+// which masked topo-build / javac / clang errors as "empty stderr" failures.
+inline std::string mergeOutput(const ::topo::platform::CapturedProcessResult& r) {
+    if (r.stderrOutput.empty()) return r.stdoutOutput;
+    if (r.stdoutOutput.empty()) return r.stderrOutput;
+    return r.stdoutOutput + "\n--- stderr ---\n" + r.stderrOutput;
+}
 
 // ---------------------------------------------------------------------------
 // TopoTomlSwap — RAII guard for the Topo-base / Topo-forced swap pattern

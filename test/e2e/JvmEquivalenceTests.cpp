@@ -41,7 +41,7 @@ protected:
     RunResult topoBuildJvm(const std::string& project) {
         fs::path projDir = jvmBenchmarksDir_ / project;
         auto r = platform::runProcessCapture(topoBuildExe_.generic_string(), {}, projDir.generic_string());
-        return RunResult{r.exitCode, r.stdoutOutput};
+        return RunResult{r.exitCode, mergeOutput(r)};
     }
 
     RunResult topoBaseBuildJvm(const std::string& project) {

@@ -14,7 +14,7 @@ protected:
         std::string exe = topoBuildExe_.generic_string();
         std::string workDir = projDir.generic_string();
         auto r = platform::runProcessCapture(exe, {}, workDir);
-        return RunResult{r.exitCode, r.stdoutOutput};
+        return RunResult{r.exitCode, mergeOutput(r)};
     }
 
     RunResult runJvmJar(const std::string& projectName, const std::string& jarName) {

@@ -113,7 +113,7 @@ RunResult E2eFixture::topoBuild(const std::string& projectName,
     std::string workDir = projDir.generic_string();
 
     auto r = platform::runProcessCapture(exe, {}, workDir);
-    return RunResult{r.exitCode, r.stdoutOutput};
+    return RunResult{r.exitCode, mergeOutput(r)};
 }
 
 // ============================================================================
@@ -245,7 +245,7 @@ RunResult E2eFixture::vanillaBuild(const std::string& projectName) {
     args.push_back(outputPath.generic_string());
 
     auto r = platform::runProcessCapture(clangxx, args);
-    return RunResult{r.exitCode, r.stdoutOutput};
+    return RunResult{r.exitCode, mergeOutput(r)};
 }
 
 // ============================================================================
@@ -332,7 +332,7 @@ RunResult E2eFixture::vanillaSharedBuild(const std::string& projectName, const s
 
         auto r = platform::runProcessCapture(clangxx, args);
         if (r.exitCode != 0) {
-            return RunResult{r.exitCode, r.stdoutOutput};
+            return RunResult{r.exitCode, mergeOutput(r)};
         }
         objFiles.push_back(objPath.generic_string());
     }
@@ -359,7 +359,7 @@ RunResult E2eFixture::vanillaSharedBuild(const std::string& projectName, const s
     }
 
     auto r = platform::runProcessCapture(clangxx, linkArgs);
-    return RunResult{r.exitCode, r.stdoutOutput};
+    return RunResult{r.exitCode, mergeOutput(r)};
 }
 
 // ============================================================================
@@ -422,7 +422,7 @@ RunResult E2eFixture::runBinary(const std::string& projectName, const std::strin
     }
 #endif // TOPO_JIT_ENGINE_DIR
 
-    return RunResult{r.exitCode, r.stdoutOutput};
+    return RunResult{r.exitCode, mergeOutput(r)};
 }
 
 // ============================================================================
@@ -449,7 +449,7 @@ RunResult E2eFixture::runJar(const std::string& jarPath, const std::vector<std::
     javaArgs.insert(javaArgs.end(), args.begin(), args.end());
 
     auto r = platform::runProcessCapture(javaExe, javaArgs);
-    return RunResult{r.exitCode, r.stdoutOutput};
+    return RunResult{r.exitCode, mergeOutput(r)};
 }
 
 // ============================================================================
@@ -504,7 +504,7 @@ RunResult E2eFixture::compileDriver(const std::string& projectName,
     args.push_back(outputPath.generic_string());
 
     auto r = platform::runProcessCapture(clangxx, args);
-    return RunResult{r.exitCode, r.stdoutOutput};
+    return RunResult{r.exitCode, mergeOutput(r)};
 }
 
 // ============================================================================

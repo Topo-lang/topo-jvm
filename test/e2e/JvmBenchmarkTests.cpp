@@ -84,7 +84,7 @@ protected:
             }
         }
         auto r = platform::runProcessCapture(topoBuildExe_.generic_string(), {}, projDir.generic_string());
-        return RunResult{r.exitCode, r.stdoutOutput};
+        return RunResult{r.exitCode, mergeOutput(r)};
     }
 
     RunResult topoBaseBuildJvm(const std::string& project,
@@ -271,7 +271,7 @@ protected:
         args.push_back(jarPath.generic_string());
 
         auto r = platform::runProcessCapture(javaExe, args);
-        return RunResult{r.exitCode, r.stdoutOutput};
+        return RunResult{r.exitCode, mergeOutput(r)};
     }
 
     // Run a JAR from JVM benchmarks directory.
