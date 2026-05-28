@@ -221,7 +221,7 @@ protected:
 
         auto comp = platform::runProcessCapture(javac, javacArgs);
         if (comp.exitCode != 0) {
-            return RunResult{comp.exitCode, "javac failed: " + comp.stdoutOutput};
+            return RunResult{comp.exitCode, "javac failed: " + mergeOutput(comp)};
         }
 
         // Extract runtime classes into class directory so they are bundled
@@ -247,7 +247,7 @@ protected:
         jarArgs.push_back(".");
 
         auto pkg = platform::runProcessCapture(jarTool, jarArgs);
-        return RunResult{pkg.exitCode, pkg.stdoutOutput};
+        return RunResult{pkg.exitCode, mergeOutput(pkg)};
     }
 
     // Run a JAR with extra JVM args (prepended before -jar).
