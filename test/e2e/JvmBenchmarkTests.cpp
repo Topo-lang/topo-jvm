@@ -203,8 +203,15 @@ protected:
             return RunResult{-1, "No .java files found in " + srcDir.generic_string()};
         }
 
-        // Locate topo-runtime.jar next to the topo-build executable
-        fs::path runtimeJar = topoBuildExe_.parent_path() / "topo-runtime.jar";
+        // topo-runtime.jar is staged by deploy-topo-runtime-java next to
+        // topo-build-jvm-java. TOPO_RUNTIME_JAR_DIR comes from cmake.
+        // Fall back to next-to-topo-build for legacy layouts.
+        fs::path runtimeJar;
+        if (std::string{TOPO_RUNTIME_JAR_DIR}.size() > 0) {
+            runtimeJar = fs::path(TOPO_RUNTIME_JAR_DIR) / "topo-runtime.jar";
+        } else {
+            runtimeJar = topoBuildExe_.parent_path() / "topo-runtime.jar";
+        }
 
         // Compile with javac
         std::vector<std::string> javacArgs;

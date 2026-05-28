@@ -24,6 +24,11 @@ target_compile_definitions(E2eHarnessJvm PUBLIC
     TOPO_LLVM_BINDIR="${TOPO_LLVM_BINDIR}"
     TOPO_JVM_BENCHMARKS_DIR="${PROJECT_SOURCE_DIR}/benchmarks"
     TOPO_JIT_ENGINE_DIR="$<$<TARGET_EXISTS:topo-jit-engine>:$<TARGET_FILE_DIR:topo-jit-engine>>"
+    # topo-runtime.jar is staged by deploy-topo-runtime-java POST_BUILD
+    # next to topo-build-jvm-java (not next to topo-build, which the test
+    # harness originally assumed — that assumption held only in monorepo
+    # where both binaries lived in one tools dir).
+    TOPO_RUNTIME_JAR_DIR="$<$<TARGET_EXISTS:topo-build-jvm-java>:$<TARGET_FILE_DIR:topo-build-jvm-java>>"
 )
 topo_set_compiler_flags(E2eHarnessJvm)
 
