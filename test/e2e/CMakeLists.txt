@@ -52,8 +52,15 @@ include(GoogleTest)
 # TEST_PROPERTIES path splits values on `;`, which mangles a multi-entry
 # ENVIRONMENT property; a wrapper sidesteps that by exporting the env
 # before exec'ing the test binary.
+# Use PROJECT_BINARY_DIR (the topo-jvm project's binary dir, set via the
+# project(topo-jvm) call) rather than CMAKE_BINARY_DIR. Standalone:
+# PROJECT_BINARY_DIR == build root, both work. Meta-embedded under
+# add_subdirectory(topo-jvm): CMAKE_BINARY_DIR is the meta build root
+# (e.g. build/ci-full/) which does NOT contain tools/topo-build-jvm-java —
+# the binary lives at build/ci-full/topo-jvm/tools/topo-build-jvm-java/,
+# which is what PROJECT_BINARY_DIR resolves to.
 set(_E2E_TOPO_BUILD_JVM_DIR
-    "${CMAKE_BINARY_DIR}/tools/topo-build-jvm-java")
+    "${PROJECT_BINARY_DIR}/tools/topo-build-jvm-java")
 if(TOPO_E2E_JAVA_HOME)
     set(_E2E_PATH "${_E2E_TOPO_BUILD_JVM_DIR}:${TOPO_E2E_JAVA_HOME}/bin:$ENV{PATH}")
 else()
