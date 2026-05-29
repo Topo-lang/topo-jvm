@@ -273,7 +273,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/topo-install
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-ubuntu-24.04-v1
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-ubuntu-24.04-v2-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
@@ -323,7 +323,9 @@ jobs:
                 -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/topo-install" \
                 -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
                 -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
-                -DTOPO_LANG_JAVA_BUILD_TESTS=OFF
+                -DTOPO_LANG_JAVA_BUILD_TESTS=OFF \
+                -DTOPO_LANG_JAVA_ENABLE_JVM_BACKEND=ON \
+                -DTOPO_GRADLE_JAVA_HOME="${JAVA_HOME}"
           cmake --build "${RUNNER_TEMP}/topo-lang-java-build" --target install
 
       # topo-cli provides the `topo-build` executable the benchmark artifact
