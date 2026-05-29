@@ -5,11 +5,15 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-  # NOTE: a nightly `schedule:` for the benchmark job is intentionally NOT
-  # wired yet — the benchmark artifact pipeline is still being brought up
-  # end-to-end (see the benchmark job; cmake stamp-scope fix landed, backend
-  # tool resolution pending). Re-add `schedule: - cron: '43 18 * * *'` once the
-  # `benchmark` job is confirmed green via manual workflow_dispatch.
+  # Nightly benchmark + e2e gate. 18:43 UTC (≈ 02:43 China). Staggered off
+  # the top of the hour and off the meta's :23 cron. Re-enabled after the
+  # `benchmark` job went green via manual workflow_dispatch (run 26632403262):
+  # the gate now runs the deterministic equivalence + pass-fired suite and
+  # --label-excludes the wall-clock timing benches, so it is bounded (~11 min)
+  # and not subject to the timing-suite hangs. Scheduled runs only ever use
+  # the workflow file on the default branch.
+  schedule:
+    - cron: '43 18 * * *'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
