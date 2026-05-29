@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Nightly benchmark + e2e run (the `benchmark` job below). 18:43 UTC
+  # ≈ 02:43 China time; staggered minute to dodge the top-of-hour scheduler
+  # backlog. Scheduled runs always use the workflow file on the default
+  # branch, so this fires only once merged to main.
+  schedule:
+    - cron: '43 18 * * *'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -211,3 +217,152 @@ jobs:
           else
               ./build/smoke
           fi
+
+  # ── Benchmark + e2e gate (schedule + manual only) ──────
+  # The 14 JVM benchmarks + the bytecode-equivalence suite. Gated to
+  # schedule / workflow_dispatch so it never adds its tens of minutes to a
+  # PR. Extends the build-and-test bootstrap with a topo-cli install — that
+  # provides the `topo-build` executable the benchmark artifact pre-build
+  # invokes — and configures TOPO_JVM_BUILD_E2E=ON. Linux only: perf
+  # measurement wants one stable platform. perf is NOT excluded — pass-fired
+  # + bytecode-diff equivalence prove each ASM pass took effect, and the
+  # four-way (vanilla/base/auto/forced) category contracts gate timing
+  # regressions. The e2e harness self-demotes a timing ERROR to WARN when
+  # run-to-run variance is high (CV > 0.05 after 10 interleaved rounds) and
+  # skips ratio checks below a 10 ms noise floor, so a real regression fails
+  # while runner noise does not.
+  benchmark:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: benchmark + e2e (linux)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
+
+      # JDK 25 — benchmarks cross-compile via `javac --release {21,25}` and
+      # measure on a modern JVM; 25 covers both release targets. (The
+      # build-and-test job pins 17, enough for a plain build but not the full
+      # benchmark matrix.)
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Export GHA cache env (for vcpkg x-gha backend)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: "56bb2411609227288b70117ead2c47585ba07713"
+
+      # Upstream install prefix — the same chain as build-and-test PLUS
+      # topo-cli. Separate cache key (…-cli-…) so it never collides with the
+      # build-and-test job's prefix. Keyed on the pinned refs like that job
+      # (branch-name, not SHA — same freshness tradeoff the repo already uses).
+      - name: Cache upstream topo install
+        id: topo-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/topo-install
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-ubuntu-24.04-v1
+
+      - name: Build & install topo-core (zero-LLVM, lang-less)
+        if: steps.topo-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "${TOPO_CORE_REF}" \
+              https://github.com/topo-lang/topo-core.git \
+              "${RUNNER_TEMP}/topo-core-src"
+          cmake -S "${RUNNER_TEMP}/topo-core-src" \
+                -B "${RUNNER_TEMP}/topo-core-build" \
+                -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+                -DTOPO_ENABLE_LLVM=OFF
+          cmake --build "${RUNNER_TEMP}/topo-core-build" --target install
+
+      - name: Build & install topo-lang
+        if: steps.topo-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "${TOPO_LANG_REF}" \
+              https://github.com/topo-lang/topo-lang.git \
+              "${RUNNER_TEMP}/topo-lang-src"
+          cmake -S "${RUNNER_TEMP}/topo-lang-src" \
+                -B "${RUNNER_TEMP}/topo-lang-build" \
+                -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          cmake --build "${RUNNER_TEMP}/topo-lang-build" --target install
+
+      - name: Re-install topo-core (with-lang)
+        if: steps.topo-cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S "${RUNNER_TEMP}/topo-core-src" \
+                -B "${RUNNER_TEMP}/topo-core-build" \
+                -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install"
+          cmake --build "${RUNNER_TEMP}/topo-core-build" --target install
+
+      - name: Build & install topo-lang-java
+        if: steps.topo-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "${TOPO_LANG_JAVA_REF}" \
+              https://github.com/topo-lang/topo-lang-java.git \
+              "${RUNNER_TEMP}/topo-lang-java-src"
+          cmake -S "${RUNNER_TEMP}/topo-lang-java-src" \
+                -B "${RUNNER_TEMP}/topo-lang-java-build" \
+                -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+                -DTOPO_LANG_JAVA_BUILD_TESTS=OFF
+          cmake --build "${RUNNER_TEMP}/topo-lang-java-build" --target install
+
+      # topo-cli provides the `topo-build` executable the benchmark artifact
+      # pre-build invokes. Installed last so its find_package(topo-lang-java)
+      # picks up the Java plugin already in the prefix.
+      - name: Build & install topo-cli
+        if: steps.topo-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch main \
+              https://github.com/topo-lang/topo-cli.git \
+              "${RUNNER_TEMP}/topo-cli-src"
+          cmake -S "${RUNNER_TEMP}/topo-cli-src" \
+                -B "${RUNNER_TEMP}/topo-cli-build" \
+                -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          cmake --build "${RUNNER_TEMP}/topo-cli-build" --target install
+
+      - name: Configure topo-jvm (e2e + benchmarks)
+        run: |
+          cmake -S . -B build -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
+              -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+              -DTOPO_JVM_BUILD_TESTS=ON \
+              -DTOPO_JVM_BUILD_E2E=ON
+
+      - name: Build
+        run: cmake --build build
+
+      # Pre-build the 14 benchmark projects × variants as an explicit,
+      # visible step rather than inside a ctest FIXTURES_SETUP timeout.
+      - name: Build benchmark artifacts
+        run: cmake --build build --target topo-bench-artifacts
+
+      # e2e + equivalence + benchmarks. perf included on purpose (timing gate);
+      # measurement serializes via the topo_bench_measure resource lock, so the
+      # 600 s per-test ceiling covers an interleaved 10-round measurement.
+      - name: Test (e2e + benchmarks)
+        run: ctest --test-dir build -L e2e --output-on-failure --timeout 600
