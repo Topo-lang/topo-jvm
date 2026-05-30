@@ -183,6 +183,13 @@ target_link_libraries(topo-e2e-jvm-equiv PRIVATE E2eHarnessJvm)
 # unique "topo_e2e_jvm_unscoped_<Name>" lock — no collision possible.
 include(GoogleTest)
 set_target_properties(topo-e2e-jvm-equiv PROPERTIES TEST_LAUNCHER "${_E2E_WRAPPER}")
+# The LABELS list here is mis-parsed by CTest: gtest_discover_tests writes it
+# UNQUOTED into the generated *_tests.cmake (`LABELS e2e equivalence
+# jvm_equivalence`), which CTest reads as LABELS=e2e plus a bogus
+# equivalence=jvm_equivalence property — so `ctest -L equivalence` finds 0.
+# The project-locks injector below is given the same LABELS and re-emits them
+# bracket-quoted (the only form CTest parses as a list), which is what actually
+# registers the equivalence / jvm_equivalence sub-labels.
 gtest_discover_tests(topo-e2e-jvm-equiv DISCOVERY_TIMEOUT 30
     PROPERTIES
         LABELS "e2e;equivalence;jvm_equivalence"
@@ -193,6 +200,7 @@ topo_inject_e2e_project_locks(
     SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/JvmEquivalenceTests.cpp"
     FIXTURE JvmEquivalence
     PREFIX topo_e2e_jvm
+    LABELS "e2e;equivalence;jvm_equivalence"
     BUILD_CALLS topoBuildJvm topoBaseBuildJvm topoForcedBuildJvm vanillaJavaBuild
     ASSERT_CALLS assertJvmBaseEquivalence assertJvmForcedEquivalence assertJvmDefaultEquivalence
 )
