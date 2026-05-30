@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
   # Nightly benchmark + e2e gate. 18:43 UTC (≈ 02:43 China). Staggered off
   # the top of the hour and off the meta's :23 cron. Re-enabled after the
-  # `benchmark` job went green via manual workflow_dispatch (run 26632403262):
+  # `benchmark` job went green via manual workflow_dispatch:
   # the gate now runs the deterministic equivalence + pass-fired suite and
   # --label-excludes the wall-clock timing benches, so it is bounded (~11 min)
   # and not subject to the timing-suite hangs. Scheduled runs only ever use
