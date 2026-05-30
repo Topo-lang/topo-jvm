@@ -21,8 +21,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * tables (e.g. {@code <init>} default constructor, line-number
  * tables) and that overloaded methods — which carry javac-emitted
  * synthetic bridges in certain shapes — survive renaming.
- *
- * Issue: {@code jvm-pass-tests-rely-on-synthetic-bytecode-not-javac}.
  */
 class ObfuscationPassRealJavacTest {
 

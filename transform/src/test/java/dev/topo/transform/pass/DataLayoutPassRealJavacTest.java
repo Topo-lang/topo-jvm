@@ -23,8 +23,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * real-javac test verifies the pass also leaves *non-matching*
  * javac-emitted bytecode intact (no spurious rewrites, no
  * StackMapFrame corruption).
- *
- * Issue: {@code jvm-pass-tests-rely-on-synthetic-bytecode-not-javac}.
  */
 class DataLayoutPassRealJavacTest {
 

@@ -47,8 +47,7 @@ public class ObfuscationPass implements BasePass {
     // Rename map keyed by the full MethodKey (owner, name, descriptor) so
     // JVM-legal overloads stay distinct slots. Earlier versions keyed by
     // owner::name only and collapsed overloads to the same obfuscated
-    // name, producing invalid bytecode — see issue
-    // jvm-obfuscation-overload-descriptor-ignored.
+    // name, producing invalid bytecode.
     //
     // Under override-chain preservation the key here is the
     // *declaring*-owner key, not the literal owner-at-call-site. Two

@@ -3,8 +3,7 @@ package app;
 /**
  * Base of a tiny inheritance pair that the {@code obfuscation}
  * benchmark exercises so the equivalence test verifies the
- * ObfuscationPass keeps the override chain intact (issue
- * jvm-obfuscation-and-method-key-design-gaps).
+ * ObfuscationPass keeps the override chain intact.
  *
  * <p>{@link #polyValue()} is non-public in the .topo declaration so
  * the obfuscator renames it. After the rename, {@link Sub} must

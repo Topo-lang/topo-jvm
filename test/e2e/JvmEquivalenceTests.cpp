@@ -840,8 +840,8 @@ TEST_F(JvmEquivalence, ObfuscationPass_FunctionalRename) {
     // `_t[0-9a-f]{16}\b` regex was stale: it dated from the SHA-256/64
     // implementation that truncated to 16 hex. Under SipHash-128 the
     // 16-char prefix has another hex digit at position 18, so the
-    // word-boundary `\b` never matched and the count was always 0 —
-    // see issue jvm-obfuscation-pass-not-firing.
+    // word-boundary `\b` never matched and the count was always 0,
+    // making the obfuscation pass falsely appear not to fire.
     std::regex obfPat(R"(_t[0-9a-f]{32}\b)");
     auto obfMatchBegin = std::sregex_iterator(topoDump.begin(), topoDump.end(), obfPat);
     auto obfMatchEnd = std::sregex_iterator();

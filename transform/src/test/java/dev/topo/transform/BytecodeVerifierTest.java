@@ -189,7 +189,7 @@ class BytecodeVerifierTest {
         assertTrue(result.passed());
     }
 
-    // --- Loader failure surfacing (audit issue jvm-classnode-loader-swallows-io-errors) ---
+    // --- Loader failure surfacing ---
 
     /**
      * A malformed .class file (truncated or otherwise unparseable by ASM)
@@ -451,8 +451,6 @@ class BytecodeVerifierTest {
      * the MethodKey refactor both overloads occupy distinct slots and
      * a descriptor-less {@code .topo} declaration matches both via
      * {@code nameIndex}.
-     *
-     * <p>Pins issue {@code jvm-bytecode-verifier-methodindex-drops-overloads}.</p>
      */
     private byte[] generateClassWithOverloads(String internalName) {
         ClassWriter cw = new ClassWriter(0);

@@ -97,8 +97,7 @@ public class Main {
         assert sinkHelper != 0 : "internalHelper should produce non-zero result";
         assert sinkCompute != 0 : "secretCompute should produce non-zero result";
 
-        // Override-chain sanity — pins issue
-        // jvm-obfuscation-and-method-key-design-gaps. Before the
+        // Override-chain sanity. Before the
         // declaring-owner walk, Sub.polyValue and Base.polyValue
         // hashed to different obfuscated names; ((Base) sub).polyValue()
         // then dispatched to Base's body and the assertion below would

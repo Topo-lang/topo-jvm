@@ -23,8 +23,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * constructor flags, real local-variable tables, real
  * {@code StackMapFrame} attributes, and the JDK class-file conventions
  * for newer Java features.
- *
- * Issue: {@code jvm-pass-tests-rely-on-synthetic-bytecode-not-javac}.
  */
 class VisibilityPassRealJavacTest {
 

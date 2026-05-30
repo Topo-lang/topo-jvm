@@ -14,8 +14,6 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Regression tests for {@code Main.sanitizePath} — guards path-traversal
  * and symlink-escape in the {@code topo-decompile-jvm} subprocess.
- *
- * Audit issue: {@code jvm-decompile-main-no-path-validation}.
  */
 class MainPathSanitizeTest {
 

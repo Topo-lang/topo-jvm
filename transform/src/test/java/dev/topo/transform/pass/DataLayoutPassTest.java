@@ -482,9 +482,8 @@ class DataLayoutPassTest {
     // Removed: testLowFrequencySkippedInNonForceMode + testCustomMinAccessRatio.
     // The access-ratio gate was deleted from the Pass — the
     // gate was an embedded cost heuristic violating the "Topo doesn't judge"
-    // principle (issue topo-passes-violate-no-judgment-principle). The
-    // DEFAULT_MIN_ACCESS_RATIO constant and min_access_ratio config field
-    // no longer exist.
+    // principle. The DEFAULT_MIN_ACCESS_RATIO constant and min_access_ratio
+    // config field no longer exist.
 
     @Test
     void testForceModeTransformsSingleAccess() {

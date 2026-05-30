@@ -2,9 +2,9 @@
 // Topo.toml ↔ Topo-{base,forced}.toml swap pattern that the JVM
 // benchmark / equivalence suite uses.
 //
-// Audit issue: jvm-e2e-toml-swap-no-rollback-guard.
-//
-// Verifies the destructor always restores the original Topo.toml even
+// Resource-lifecycle fix: the prior ad-hoc swap left Topo.toml
+// permanently swapped if the build aborted mid-scope. These tests
+// verify the destructor always restores the original Topo.toml even
 // when the swap-using scope exits via exception or early return.
 
 #include "E2eHarness.h"

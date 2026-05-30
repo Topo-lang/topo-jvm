@@ -189,8 +189,6 @@ class ObfuscationPassTest {
      * descriptors. The pre-MethodKey ObfuscationPass collapsed these to
      * the same obfuscated name (producing invalid bytecode); after the
      * MethodKey refactor each overload gets its own name.
-     *
-     * <p>Pins issue {@code jvm-obfuscation-overload-descriptor-ignored}.</p>
      */
     private byte[] generateClassWithOverloads(String className) {
         ClassWriter cw = new ClassWriter(0);
@@ -255,8 +253,7 @@ class ObfuscationPassTest {
         var distinctNames = new HashSet<String>();
         for (var v : pairs.values()) distinctNames.add(v);
         assertEquals(2, distinctNames.size(),
-            "overloaded methods must get distinct obfuscated names — " +
-            "see jvm-obfuscation-overload-descriptor-ignored");
+            "overloaded methods must get distinct obfuscated names");
     }
 
     @Test

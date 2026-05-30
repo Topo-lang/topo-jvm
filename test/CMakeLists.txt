@@ -18,7 +18,7 @@ endif()
 # CLI (lives in topo-cli, not yet lifted), monorepo cmake helpers
 # (TopoE2eProjectLocks.cmake, TopoBenchCategoryLabels.cmake), and the
 # TOPO_LLVM_BENCHMARKS_DIR / TOPO_CORE_BUILD_FIXTURES_DIR fixture
-# directories. See split-topo-jvm-tools-e2e-deferred issue.
+# directories, so they are gated off until those land.
 
 if(TOPO_JVM_BUILD_TOOLS)
     add_subdirectory(unit)

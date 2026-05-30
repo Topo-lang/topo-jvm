@@ -32,8 +32,7 @@ import java.util.Objects;
  * never be used as a hashed map key: a wildcard's {@code hashCode} is
  * computed from the literal {@code "*"} descriptor, which silently
  * misses every concrete entry it should match (the wildcard footgun
- * this split closes — see issue
- * jvm-obfuscation-and-method-key-design-gaps).</p>
+ * this split closes).</p>
  *
  * <p>Wire-contract status: this is an internal data type within
  * {@code topo-jvm/transform/} — it does not cross the JSON/process

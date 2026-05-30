@@ -746,8 +746,9 @@ CATEGORY_BENCH_TEST_F(ENHANCE, JvmPassBench, Parallel_Unfriendly) {
 //
 // History: OPT → COVERED → OPT (reverted). The COVERED reclassification
 // assumed a ≈ 1.02-1.05× theoretical upper bound; that argument collapsed
-// once `config-pipeline-section-not-in-knownsections` was fixed and base
-// jars no longer silently shared the rewrite. Post-fix friendly
+// once the `[pipeline]` config section was added to knownSections (it was
+// previously treated as unknown, so `mode = "off"` was silently ignored
+// and base jars still received the rewrite). Post-fix friendly
 // measurement: forced/base = 0.667, auto/base = 0.671 — satisfies the OPT
 // thresholds cleanly.
 

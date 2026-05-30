@@ -226,11 +226,11 @@ public class DataLayoutPass implements BasePass {
                 if (candidate.fields.size() != 1) continue;
 
                 // Access-ratio threshold removed. The Pass does
-                // not gate on workload characteristics (the
-                // `topo-passes-violate-no-judgment-principle` audit caught
-                // this as an embedded cost heuristic). Force mode applies
-                // SoA to every single-field candidate; benchmark/JIT
-                // determines actual benefit.
+                // not gate on workload characteristics; the old threshold
+                // was an embedded cost heuristic that overstepped the
+                // pass's mandate. Force mode applies SoA to every
+                // single-field candidate; benchmark/JIT determines actual
+                // benefit.
 
                 rewrite(candidate);
                 // Sidecar record. host_type is the JVM

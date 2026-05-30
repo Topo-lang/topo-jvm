@@ -19,7 +19,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Roadmap 13, direction "JVM Lambda recovery".
+ * JVM lambda recovery.
  *
  * <p>These tests compile real Java source with the JDK compiler so the
  * bytecode contains genuine {@code java.lang.invoke.LambdaMetafactory} and

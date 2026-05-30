@@ -29,8 +29,7 @@ import java.util.Set;
  * overridable method so the obfuscated name is shared across the
  * override chain. Without this, a subclass override hashes under its
  * own owner and the JVM treats the override as an unrelated method —
- * polymorphism silently breaks (see issue
- * {@code jvm-obfuscation-and-method-key-design-gaps}).</p>
+ * polymorphism silently breaks.</p>
  *
  * <p>Classes outside the input batch (JDK classes, third-party libs,
  * runtime jar) are not present in the maps — the hierarchy walk in

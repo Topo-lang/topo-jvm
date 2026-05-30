@@ -27,9 +27,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * obfuscated name so the JVM still treats {@code B.foo} as an
  * override of {@code A.foo} and {@code b.foo()} dispatches to
  * {@code B}'s body.
- *
- * <p>Pins issue
- * {@code jvm-obfuscation-and-method-key-design-gaps}.</p>
  */
 class ObfuscationPassOverrideTest {
 
@@ -121,8 +118,7 @@ class ObfuscationPassOverrideTest {
             "base method must be renamed under obfuscation: " + baseRenamed);
         assertEquals(baseRenamed, subRenamed,
             "override must hash to the same name as the base — otherwise "
-            + "the JVM no longer treats Sub.foo as an override of Base.foo "
-            + "(see jvm-obfuscation-and-method-key-design-gaps)");
+            + "the JVM no longer treats Sub.foo as an override of Base.foo");
     }
 
     @Test

@@ -19,8 +19,8 @@ repositories {
 dependencies {
     // ASM 9.8 is the first release that reads Java 25 (class major 69)
     // bytecode — topo-runtime.jar is compiled by a JDK-25 toolchain and
-    // PostTransformVerifier scans it. See issue
-    // jvm-equivalence-build-failure.md.
+    // PostTransformVerifier scans it; an older ASM that cannot read class
+    // major 69 fails the equivalence build.
     implementation("org.ow2.asm:asm:9.8")
     implementation("org.ow2.asm:asm-tree:9.8")
     implementation("org.ow2.asm:asm-commons:9.8")

@@ -26,8 +26,6 @@ import java.util.Map;
  * lambda{@code $0} bodies, etc.). This helper lets sibling
  * {@code *RealJavacTest} classes drive the same passes against real
  * {@code javac} output so the test suite has both layers.
- *
- * Issue: {@code jvm-pass-tests-rely-on-synthetic-bytecode-not-javac}.
  */
 public final class RealJavacFixture {
     private RealJavacFixture() {}

@@ -36,8 +36,7 @@ class MethodKeyTest {
     void wildcardMatchesAnyDescriptor() {
         // Wildcard matching lives on the free helper MethodKeyMatcher —
         // not on MethodKey itself — so a wildcard key cannot accidentally
-        // be used as a HashMap key against concrete entries (see issue
-        // jvm-obfuscation-and-method-key-design-gaps).
+        // be used as a HashMap key against concrete entries.
         MethodKey wildcard = MethodKey.ofAnyOverload("app/Service", "helper");
         MethodKey intOverload = MethodKey.of("app/Service", "helper", "(I)V");
         MethodKey longOverload = MethodKey.of("app/Service", "helper", "(J)V");

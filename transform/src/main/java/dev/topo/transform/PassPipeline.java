@@ -112,8 +112,7 @@ public class PassPipeline {
 
         // Read every class once so we can both feed it to applyPasses() and
         // build a class-hierarchy snapshot ObfuscationPass needs to keep
-        // override chains intact (issue
-        // jvm-obfuscation-and-method-key-design-gaps). The cost is one extra
+        // override chains intact. The cost is one extra
         // ClassReader pass per file with SKIP_CODE — negligible next to the
         // 14 Pass rewrites the main loop runs.
         List<byte[]> originals = new ArrayList<>(classFiles.size());
@@ -508,20 +507,18 @@ public class PassPipeline {
     private byte[] applyPasses(byte[] classBytes, ClassHierarchy hierarchy) {
         // Each pass reads bytes and produces new bytes via ClassVisitor chain.
         //
-        // The 15-Pass sequence below is the canonical ordering documented
-        // in the topo-jvm pass-pipeline spec (the "Pass table", entries
-        // 1-15). Sequential 1-15 numbering replaces the historical
+        // The 15-Pass sequence below is the canonical ordering, numbered
+        // 1-15. Sequential 1-15 numbering replaces the historical
         // fractional indices (1.3 / 1.5 / 1.75 / ... / 5.5) that accumulated
         // as new passes were inserted between existing ones — those numbers
         // were a fossil record of insertion history, not a stable schema, and
         // diverged from the registry-style numbering on the LLVM side. The
-        // spec sub-section on why LLVM and JVM keep different
-        // registration shapes explains the divergence: LLVM
-        // merges link-time into one module + one PassCategoryRegistry sweep;
-        // JVM rewrites every classfile independently, no merged IR, and each
-        // ASM Pass is a stateless visitor).
+        // two backends keep different registration shapes for a reason:
+        // LLVM merges link-time into one module + one PassCategoryRegistry
+        // sweep; JVM rewrites every classfile independently, no merged IR,
+        // and each ASM Pass is a stateless visitor).
         //
-        // Pass-ordering constraints (also pinned in the spec):
+        // Pass-ordering constraints:
         //   * Visibility runs first (later passes may key on the latest
         //     access flags, e.g. InlineHint adds ACC_FINAL).
         //   * Prefetch must run BEFORE TypeNarrowing — TypeNarrowing
@@ -686,8 +683,7 @@ public class PassPipeline {
         }
 
         // Pass 14: Stage reorder (always-mechanical; INFRA category — no
-        // judging accumulator, no sidecar block. Documented in the
-        // topo-jvm pass-pipeline spec as row 14 of the Pass table.)
+        // judging accumulator, no sidecar block.)
         current = applyPass(current, new StageReorderPass(config, metadata));
 
         // Pass 15: Obfuscation (if mode is salted)

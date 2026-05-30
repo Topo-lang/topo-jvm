@@ -18,8 +18,8 @@ import java.util.Set;
  *       the JVM class name by stripping the class suffix)</li>
  * </ol>
  *
- * <p>Without the second form the pass silently fails to fire — the root
- * cause of {@code jvm-pass-namespace-qualification-mismatch}.</p>
+ * <p>Without the second form the pass silently fails to fire when a
+ * declaration is written in namespace-level form.</p>
  *
  * <h2>Overload semantics</h2>
  *
@@ -37,9 +37,8 @@ import java.util.Set;
  * <p>A namespace-only metadata entry ({@code app::helper}) matches every
  * class in package {@code app/} that defines a method named
  * {@code helper}; this is intentional mass-application, not a fallback.
- * The method-key spec carries the user-facing rule. Cross-class
- * collisions are bounded by the existing
- * {@code jvm-qualified-name-match-dual-form-collision} guard tests.</p>
+ * Cross-class collisions are bounded by the dual-form matching guard
+ * tests in this package.</p>
  */
 final class QualifiedNameMatch {
     private QualifiedNameMatch() {}

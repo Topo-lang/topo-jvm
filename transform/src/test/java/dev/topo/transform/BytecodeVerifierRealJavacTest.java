@@ -18,8 +18,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * The companion uses ASM's ClassWriter to fabricate minimal class
  * files; this class compiles a small Java source via the JDK and
  * verifies against the real {@code .class} bytes.
- *
- * Issue: {@code jvm-pass-tests-rely-on-synthetic-bytecode-not-javac}.
  */
 class BytecodeVerifierRealJavacTest {
 
@@ -88,7 +86,7 @@ class BytecodeVerifierRealJavacTest {
     @Test
     void overloadedJavacMethodsBothCounted(@TempDir Path tempDir) throws Exception {
         // The verifier indexes methods by name+descriptor when checking
-        // overloads (issue jvm-bytecode-verifier-methodindex-drops-overloads).
+        // overloads, so both overloads must be counted.
         // Real javac emits both overloads with distinct descriptors.
         String source = "package app;\n"
                       + "public class Engine {\n"

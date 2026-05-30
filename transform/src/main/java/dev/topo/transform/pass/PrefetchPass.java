@@ -24,13 +24,14 @@ import java.util.*;
  * gate produced a measured 1.41× regression on the friendly benchmark — well
  * outside the ENHANCE {@code topo/vanilla ≤ 1.05} band. Since the pass has no
  * speedup path on JVM, forced-mode injection degenerates to a pure witness
- * marker per issue {@code jvm-prefetch-pass-covered-regression-or-noise} §Acceptance.</p>
+ * marker: it produces the required forced-mode bytecode diff without
+ * attempting a speedup that the measurements show would regress.</p>
  *
  * <p><strong>Mode semantics</strong>:
  * <ul>
  *   <li>{@code off} — no transformation (default)</li>
  *   <li>{@code auto} — no-op on JVM for streaming (HW covers; auto must stay
- *       equivalent to {@code off} per auto-mode-semantics rule)</li>
+ *       behaviorally equivalent to {@code off})</li>
  *   <li>{@code force} — inject one empty witness call per matching loop body;
  *       satisfies the "forced must produce bytecode diff" absolute rule
  *       without materially affecting runtime</li>

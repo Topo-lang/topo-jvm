@@ -24,8 +24,6 @@ import static org.junit.jupiter.api.Assertions.*;
  *   2. javac-emitted attributes (constant-pool entries, line tables)
  *      do not produce a {@code ClassFormatError} after rewrite,
  *   3. the output bytes still read back cleanly via ASM.
- *
- * Issue: {@code jvm-pass-tests-rely-on-synthetic-bytecode-not-javac}.
  */
 class PassPipelineRealJavacTest {
 

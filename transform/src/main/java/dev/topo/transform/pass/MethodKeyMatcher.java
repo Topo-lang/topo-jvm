@@ -19,9 +19,7 @@ package dev.topo.transform.pass;
  * several concrete overloads" as a warning condition (the {@code .topo}
  * declaration is ambiguous against the host symbol set).</p>
  *
- * <p>See {@code MethodKey} class doc and issue
- * {@code jvm-obfuscation-and-method-key-design-gaps} for the asymmetry
- * background.</p>
+ * <p>See {@code MethodKey} class doc for the asymmetry background.</p>
  */
 public final class MethodKeyMatcher {
     private MethodKeyMatcher() {}

@@ -238,8 +238,7 @@ public class BytecodeVerifier {
         // lives in topo-core's PurityCheck (declaration-level call-graph
         // analysis); this JVM-side check is defence in depth for the
         // pairwise-write case. The historical "Check 10: Parallel safety"
-        // wording overstated the coverage — see
-        // jvm-bytecode-verifier-parallel-safety-misnamed.
+        // wording overstated the coverage and is intentionally narrowed here.
         checkSharedMutableFieldWrites(result, logicBlocksObj, methodIndex, nameIndex, mapper);
 
         return result;
@@ -454,8 +453,8 @@ public class BytecodeVerifier {
      * <p>The canonical purity guarantee lives in topo-core's
      * {@code PurityCheck}, which walks the declaration-class call graph.
      * This JVM-side check is defence-in-depth for the pairwise-write
-     * pattern. See {@code jvm-bytecode-verifier-parallel-safety-misnamed}
-     * for the rename history.</p>
+     * pattern only, and is deliberately narrower than its historical
+     * "Parallel safety" name implied.</p>
      */
     private void checkSharedMutableFieldWrites(VerifyResult result, JsonObject logicBlocksObj,
                                                 Map<MethodKey, MethodNode> methodIndex,
