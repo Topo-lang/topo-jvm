@@ -67,6 +67,16 @@ reachable.
 | `TOPO_JVM_BUILD_TESTS` | `ON` | Build unit tests (gates on `TOPO_JVM_BUILD_TOOLS`) |
 | `TOPO_GRADLE_JAVA_HOME` | unset | Override JDK for Gradle invocations |
 
+### Windows
+
+`topo-transform.jar` (the 15-pass ASM bytecode rewriter) and
+`topo-decompile-jvm` (the JVMLifter) are **not built or tested on Windows CI**
+yet — the Gradle subprojects that produce them hang on the Windows runners, so
+both are gated off there. `topo-build-jvm-java` itself builds on Windows, but
+the two JARs it drives are currently produced and verified on Linux/macOS only.
+To use them on Windows, build topo-jvm on Linux or macOS and copy the installed
+`share/topo-jvm/lib/*.jar` into your Windows install.
+
 ## Install
 
 ```bash
