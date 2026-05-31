@@ -56,6 +56,26 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Cache the Gradle artifacts (foojay-resolver plugin, ASM, gson, JUnit)
+      # that the transform/ + decompile/ subprojects resolve from Maven Central
+      # at build time. Without a warm cache every run re-fetches, so a transient
+      # HTTP 429 (Maven Central rate-limiting the shared-runner egress IP) fails
+      # the Build step. Restoring the cache means artifacts are fetched only on a
+      # cold cache; restore-keys keeps a partial cache across dependency bumps.
+      # Maven Central's operator (Sonatype) recommends caching over retrying for
+      # 429 resilience. Skipped on Windows, where the Gradle subprojects are
+      # gated OFF in the Configure step.
+      - name: Cache Gradle dependencies
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ matrix.os }}-${{ hashFiles('transform/build.gradle.kts', 'transform/settings.gradle.kts', 'transform/gradle/wrapper/gradle-wrapper.properties', 'decompile/build.gradle.kts', 'decompile/settings.gradle.kts', 'decompile/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ matrix.os }}-
+
       - name: Export GHA cache env (for vcpkg x-gha backend)
         uses: actions/github-script@v7
         with:
@@ -254,6 +274,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+
+      # Cache the Gradle artifacts the transform/ + decompile/ subprojects
+      # resolve from Maven Central (see the build-and-test job for the rationale)
+      # so a transient 429 only bites a cold cache. Shares the gradle-ubuntu-24.04
+      # namespace with that job — same subprojects, so either run seeds the other.
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-ubuntu-24.04-${{ hashFiles('transform/build.gradle.kts', 'transform/settings.gradle.kts', 'transform/gradle/wrapper/gradle-wrapper.properties', 'decompile/build.gradle.kts', 'decompile/settings.gradle.kts', 'decompile/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-ubuntu-24.04-
 
       - name: Export GHA cache env (for vcpkg x-gha backend)
         uses: actions/github-script@v7
