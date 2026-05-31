@@ -388,12 +388,23 @@ jobs:
 
       - name: Configure topo-jvm (e2e + benchmarks)
         run: |
+          # On manual dispatch, also build the timing benchmarks so the
+          # obfuscation-timeout regression guard below can run them. The
+          # nightly schedule skips them: the full timing suite serializes via
+          # the topo_bench_measure resource lock and takes 40-90 min, which is
+          # not a useful PR/nightly gate (see issue
+          # bench-timing-ci-duration-and-obfuscation-hang).
+          BENCH_FLAG=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BENCH_FLAG="-DTOPO_JVM_BUILD_BENCHMARKS=ON"
+          fi
           cmake -S . -B build -G Ninja \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
               -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
               -DTOPO_JVM_BUILD_TESTS=ON \
-              -DTOPO_JVM_BUILD_E2E=ON
+              -DTOPO_JVM_BUILD_E2E=ON \
+              ${BENCH_FLAG}
 
       - name: Build
         run: cmake --build build
@@ -410,3 +421,14 @@ jobs:
       # proves each pass fires AND preserves behavior (timing stripped).
       - name: Test (e2e equivalence + pass-fired; timing excluded)
         run: ctest --test-dir build -L e2e --label-exclude "perf|benchmark" --output-on-failure --timeout 300
+
+      # Manual-only regression guard for the obfuscation timing hang. The
+      # JvmPassBench_obfuscation case used to exceed the 300s per-test ctest
+      # TIMEOUT on shared ubuntu runners (500_000-iteration inner loops);
+      # benchmarks/obfuscation/.../Main.java cut WORK to 20_000. Run that case
+      # under the same 300s TIMEOUT to prove it now finishes comfortably.
+      # Scoped to the obfuscation case so this stays fast (drop -R to time the
+      # full suite). Requires BENCH_FLAG above, so it is workflow_dispatch only.
+      - name: Timing bench — obfuscation 300s-timeout regression guard (manual)
+        if: github.event_name == 'workflow_dispatch'
+        run: ctest --test-dir build -L benchmark -R JvmPassBench_obfuscation --output-on-failure --timeout 300
