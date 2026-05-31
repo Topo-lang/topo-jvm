@@ -18,6 +18,16 @@ public class Main {
     static final int ROUNDS = 7;
     static final int WARMUP = 20;
     static final int ITERS = 10;
+    // Per-helper inner-loop trip count. Capped to keep the four-way timing
+    // run (vanilla/base/auto/forced × up to 10 variance-resample rounds ≈ 40
+    // JVM process launches per case) well under the 300s ctest timeout on a
+    // shared CI runner. ObfuscationPass is metadata-only (symbol renaming) so
+    // the vanilla-vs-obfuscated comparison is a *ratio* — scaling WORK down
+    // uniformly preserves it while bounding wall-clock. 100 outer iterations
+    // (friendly/unfriendly) × WORK still give a steady-state, above-noise
+    // measurement and enough warmup to trigger C2 compilation of the hot
+    // loops. (Was 500_000, which serialized to ~40min and timed out.)
+    static final int WORK = 20_000;
 
     // Volatile sinks — prevent dead-code elimination
     static volatile int sinkHelper, sinkCompute, sinkResult;
@@ -27,7 +37,7 @@ public class Main {
     // Private: CPU-bound internal helper, writes to volatile sink.
     private void internalHelper(int x) {
         int sum = 0;
-        for (int i = 0; i < 500_000; i++) {
+        for (int i = 0; i < WORK; i++) {
             sum += (x + i) * 31 % 17;
         }
         sinkHelper = sum;
@@ -37,7 +47,7 @@ public class Main {
     // Private: CPU-bound secret computation.
     private int secretCompute(int a, int b) {
         int sum = 0;
-        for (int i = 0; i < 500_000; i++) {
+        for (int i = 0; i < WORK; i++) {
             sum += (a + i) * 37 % 19 + (b + i) * 41 % 23;
         }
         sinkCompute = sum;
