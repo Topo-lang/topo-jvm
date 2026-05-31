@@ -37,7 +37,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-14, windows-2022]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install build deps (linux)
         if: runner.os == 'Linux'
@@ -51,7 +51,7 @@ jobs:
       # supports JDK 17) and the topo-build-jvm-java backend tool's javac
       # invocation at run time.
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -67,7 +67,7 @@ jobs:
       # gated OFF in the Configure step.
       - name: Cache Gradle dependencies
         if: runner.os != 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -77,7 +77,7 @@ jobs:
             gradle-${{ matrix.os }}-
 
       - name: Export GHA cache env (for vcpkg x-gha backend)
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
@@ -91,7 +91,7 @@ jobs:
 
       - name: Cache upstream topo install
         id: topo-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
           key: topo-core-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-${{ matrix.os }}-v3
@@ -159,8 +159,11 @@ jobs:
         # Windows: the Gradle subprojects (transform + decompile) hang
         # mid-build at ~20+ min on this runner, while macOS/ubuntu finish
         # the same step in ~2 min. Gate them OFF for Windows CI so the C++
-        # toolchain side (topo-build-jvm-java) still ships; the JARs are
-        # exercised on the other two platforms and in monorepo CI.
+        # toolchain side (topo-build-jvm-java) still ships. NOTE: this means
+        # topo-transform.jar / topo-decompile-jvm are NOT built or tested on
+        # Windows at all — they are produced and verified on Linux/macOS only
+        # (the meta full job is Linux-only). The README "Windows" section
+        # documents this gap for users.
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             GRADLE_ARGS="-DTOPO_JVM_BUILD_TRANSFORM=OFF -DTOPO_JVM_BUILD_DECOMPILE=OFF"
@@ -262,7 +265,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
 
       # JDK 25 — benchmarks cross-compile via `javac --release {21,25}` and
@@ -270,7 +273,7 @@ jobs:
       # build-and-test job pins 17, enough for a plain build but not the full
       # benchmark matrix.)
       - name: Set up JDK 25
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
@@ -280,7 +283,7 @@ jobs:
       # so a transient 429 only bites a cold cache. Shares the gradle-ubuntu-24.04
       # namespace with that job — same subprojects, so either run seeds the other.
       - name: Cache Gradle dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -290,7 +293,7 @@ jobs:
             gradle-ubuntu-24.04-
 
       - name: Export GHA cache env (for vcpkg x-gha backend)
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
@@ -308,7 +311,7 @@ jobs:
       # (branch-name, not SHA — same freshness tradeoff the repo already uses).
       - name: Cache upstream topo install
         id: topo-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
           key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-ubuntu-24.04-v2-jvmbackend
