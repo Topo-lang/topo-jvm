@@ -794,6 +794,42 @@ TEST_F(JvmEquivalence, ObservabilityPass_FunctionalInjection) {
                 topoHasStageEvent, vanillaHasStageEvent);
 }
 
+// --- ArenaPass (lifetime arena injection) ---
+//
+// Lifetime is a metadata-type pass: it materialises an Arena lifecycle into
+// bytecode rather than making the program faster, so there is no speedup to
+// assert. The acceptance witness is functional — the topo JAR's user methods
+// (allocWork/sumWork in app.Main) must reference `dev/topo/Arena` (the
+// try-finally lifecycle ArenaPass injects), while the vanilla JAR does not.
+// Mirrors ObservabilityPass_FunctionalInjection above.
+TEST_F(JvmEquivalence, ArenaPass_FunctionalArenaInjection) {
+    ASSERT_FALSE(jvmBenchmarksDir_.empty()) << "TOPO_JVM_BENCHMARKS_DIR not set";
+
+    auto vBuild = vanillaJavaBuild("lifetime");
+    ASSERT_EQ(vBuild.exitCode, 0) << "Vanilla build failed:\n" << vBuild.output;
+
+    auto tBuild = topoBuildJvm("lifetime");
+    ASSERT_EQ(tBuild.exitCode, 0) << "Topo build failed:\n" << tBuild.output;
+
+    std::string topoDump = javapDumpJar("lifetime", "java_lifetime.jar");
+    std::string vanillaDump = javapDumpJar("lifetime", "build/vanilla.jar");
+    EXPECT_FALSE(topoDump.empty()) << "javap on topo JAR produced no output";
+
+    bool topoHasArena = topoDump.find("dev/topo/Arena") != std::string::npos
+                        || topoDump.find("dev.topo.Arena") != std::string::npos;
+    bool vanillaHasArena = vanillaDump.find("dev/topo/Arena") != std::string::npos
+                           || vanillaDump.find("dev.topo.Arena") != std::string::npos;
+
+    EXPECT_TRUE(topoHasArena) << "lifetime: topo JAR missing Arena references — "
+                              << "ArenaPass did not inject the Arena lifecycle.";
+    EXPECT_FALSE(vanillaHasArena)
+        << "lifetime: vanilla JAR unexpectedly references Arena "
+        << "(should only appear after ArenaPass transform).";
+
+    std::printf("[  INFO  ] jvm/lifetime: topo has Arena=%d, vanilla has=%d\n",
+                topoHasArena, vanillaHasArena);
+}
+
 // --- ObfuscationPass (symbol rename) ---
 //
 // Functional assertion: the topo JAR's app.Main disassembly must contain
