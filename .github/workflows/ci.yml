@@ -263,14 +263,25 @@ jobs:
     # timing suite never lands on the PR gate.
     # No `if:` → runs on every workflow trigger (push to main, PR, dispatch,
     # nightly schedule).
-    name: benchmark + e2e (linux)
-    runs-on: ubuntu-24.04
+    name: benchmark + e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
     steps:
       - uses: actions/checkout@v5
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
+
+      - name: Install build deps (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
+
+      - name: Install build deps (macos)
+        if: runner.os == 'macOS'
+        run: brew install ninja
 
       # JDK 25 for the benchmark measurement (javac --release {21,25}), PLUS the
       # pinned Gradle toolchains 21 (transform) + 17 (decompile) — the subprojects
@@ -296,9 +307,9 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-ubuntu-24.04-${{ hashFiles('transform/build.gradle.kts', 'transform/settings.gradle.kts', 'transform/gradle/wrapper/gradle-wrapper.properties', 'decompile/build.gradle.kts', 'decompile/settings.gradle.kts', 'decompile/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-${{ matrix.os }}-${{ hashFiles('transform/build.gradle.kts', 'transform/settings.gradle.kts', 'transform/gradle/wrapper/gradle-wrapper.properties', 'decompile/build.gradle.kts', 'decompile/settings.gradle.kts', 'decompile/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
-            gradle-ubuntu-24.04-
+            gradle-${{ matrix.os }}-
 
       - name: Export GHA cache env (for vcpkg x-gha backend)
         uses: actions/github-script@v8
@@ -322,7 +333,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-ubuntu-24.04-v2-jvmbackend
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v2-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
@@ -429,7 +440,17 @@ jobs:
       # Equivalence builds its variants on-demand (no pre-build needed here) and
       # proves each pass fires AND preserves behavior (timing stripped).
       - name: Test (e2e equivalence + pass-fired; timing excluded)
-        run: ctest --test-dir build -L e2e --label-exclude "perf|benchmark" --output-on-failure --timeout 300
+        run: |
+          # Windows: MinGW-built test exes launched at ctest time need the
+          # build compiler's libstdc++-6.dll ahead of any stale copy earlier on
+          # PATH, else they abort with 0xC0000139 (see topo-core 44d3155).
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cxx=$(grep -m1 '^CMAKE_CXX_COMPILER:' build/CMakeCache.txt | cut -d= -f2)
+            if [ -n "$cxx" ]; then
+              export PATH="$(cygpath -u "$(dirname "$cxx")"):${PATH}"
+            fi
+          fi
+          ctest --test-dir build -L e2e --label-exclude "perf|benchmark" --output-on-failure --timeout 300
 
       # Manual-only regression guard for the obfuscation timing hang. The
       # JvmPassBench_obfuscation case used to exceed the 300s per-test ctest
