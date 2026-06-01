@@ -258,7 +258,14 @@ jobs:
   # skips ratio checks below a 10 ms noise floor, so a real regression fails
   # while runner noise does not.
   benchmark:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # The deterministic e2e (functional + equivalence + pass-fired) now gates
+    # push + PR too — not just schedule/dispatch. On push/PR/schedule BENCH_FLAG
+    # is empty (no timing build) and the obfuscation timing-guard step stays
+    # workflow_dispatch-only, so the Test step runs ONLY the deterministic
+    # labels (ctest -L e2e --label-exclude "perf|benchmark"); the 40-90 min
+    # timing suite never lands on the PR gate.
+    # No `if:` → runs on every workflow trigger (push to main, PR, dispatch,
+    # nightly schedule).
     name: benchmark + e2e (linux)
     runs-on: ubuntu-24.04
     defaults:
