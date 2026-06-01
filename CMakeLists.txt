@@ -285,7 +285,13 @@ if(TOPO_JVM_BUILD_E2E AND TOPO_JVM_BUILD_TESTS AND (PROJECT_IS_TOP_LEVEL OR TOPO
     # fall back to whatever JAVA_HOME / `java` resolves at test time.
     set(TOPO_E2E_JAVA_HOME "")
     if(APPLE)
-        foreach(_JDK_VER 21 22 23 25 26)
+        # Highest-first: the topo runtime jar (topo-lang-java runtime/
+        # build.gradle.kts pins its Gradle toolchain to Java 25) ships as class
+        # v69, so the e2e program that links it must RUN on a JDK >= 25. Probing
+        # 21 first picked Java 21, which then aborts loading the jar with
+        # UnsupportedClassVersionError (recognises only up to v65). Pick the
+        # newest installed JDK so it can always load the runtime jar.
+        foreach(_JDK_VER 26 25 23 22 21)
             execute_process(
                 COMMAND /usr/libexec/java_home -v ${_JDK_VER}
                 OUTPUT_VARIABLE _RUNTIME_JDK

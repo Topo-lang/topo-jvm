@@ -263,27 +263,47 @@ jobs:
     # timing suite never lands on the PR gate.
     # No `if:` → runs on every workflow trigger (push to main, PR, dispatch,
     # nightly schedule).
-    name: benchmark + e2e (linux)
-    runs-on: ubuntu-24.04
+    name: benchmark + e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Cold build + e2e finishes well under this; the cap turns a hang into a
+    # fast failure instead of burning the 6-hour default.
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows-2022 deferred: the cold full-stack Gradle bootstrap hangs on
+        # the Windows runner. Bring macOS + Linux green first, then re-add it.
+        os: [ubuntu-24.04, macos-14]
     steps:
       - uses: actions/checkout@v5
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
 
-      # JDK 25 for the benchmark measurement (javac --release {21,25}), PLUS the
-      # pinned Gradle toolchains 21 (transform) + 17 (decompile) — the subprojects
-      # require them explicitly now (gradle.properties auto-download=false +
-      # fromEnv), and this job also builds the transform/decompile JARs. 25 is
-      # listed last so JAVA_HOME stays 25 for the benchmark javac.
-      - name: Set up JDKs (25 benchmark + 21/17 Gradle toolchains)
+      - name: Install build deps (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
+
+      - name: Install build deps (macos)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      # 25 is listed LAST so JAVA_HOME=25 — required because the topo runtime
+      # jar (topo-lang-java runtime/build.gradle.kts) pins its Gradle toolchain
+      # to Java 25 → class v69, so the e2e program that links it must RUN on
+      # Java 25 (a Java-21 runtime aborts with UnsupportedClassVersionError).
+      # The backend javac=25 still honours `--release 21` for user classes
+      # (v65). On Linux the e2e harness runs with JAVA_HOME; on macOS it probes
+      # the newest installed JDK (CMakeLists.txt, highest-first) — both resolve
+      # to 25. 21 (transform) + 17 (decompile) stay installed for the
+      # subprojects' fromEnv toolchains.
+      - name: Set up JDKs (25 runtime/execution + 21 transform + 17 decompile)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: |
-            21
             17
+            21
             25
 
       # Cache the Gradle artifacts the transform/ + decompile/ subprojects
@@ -296,9 +316,9 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-ubuntu-24.04-${{ hashFiles('transform/build.gradle.kts', 'transform/settings.gradle.kts', 'transform/gradle/wrapper/gradle-wrapper.properties', 'decompile/build.gradle.kts', 'decompile/settings.gradle.kts', 'decompile/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-${{ matrix.os }}-${{ hashFiles('transform/build.gradle.kts', 'transform/settings.gradle.kts', 'transform/gradle/wrapper/gradle-wrapper.properties', 'decompile/build.gradle.kts', 'decompile/settings.gradle.kts', 'decompile/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
-            gradle-ubuntu-24.04-
+            gradle-${{ matrix.os }}-
 
       - name: Export GHA cache env (for vcpkg x-gha backend)
         uses: actions/github-script@v8
@@ -322,7 +342,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-ubuntu-24.04-v2-jvmbackend
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v4-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
@@ -429,7 +449,17 @@ jobs:
       # Equivalence builds its variants on-demand (no pre-build needed here) and
       # proves each pass fires AND preserves behavior (timing stripped).
       - name: Test (e2e equivalence + pass-fired; timing excluded)
-        run: ctest --test-dir build -L e2e --label-exclude "perf|benchmark" --output-on-failure --timeout 300
+        run: |
+          # Windows: MinGW-built test exes launched at ctest time need the
+          # build compiler's libstdc++-6.dll ahead of any stale copy earlier on
+          # PATH, else they abort with 0xC0000139 (see topo-core 44d3155).
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cxx=$(grep -m1 '^CMAKE_CXX_COMPILER:' build/CMakeCache.txt | cut -d= -f2)
+            if [ -n "$cxx" ]; then
+              export PATH="$(cygpath -u "$(dirname "$cxx")"):${PATH}"
+            fi
+          fi
+          ctest --test-dir build -L e2e --label-exclude "perf|benchmark" --output-on-failure --timeout 300
 
       # Manual-only regression guard for the obfuscation timing hang. The
       # JvmPassBench_obfuscation case used to exceed the 300s per-test ctest
