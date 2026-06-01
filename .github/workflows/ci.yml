@@ -47,14 +47,20 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja
 
-      # JDK 17 covers both the bundled Gradle wrappers (gradle-9.5.1+
-      # supports JDK 17) and the topo-build-jvm-java backend tool's javac
-      # invocation at run time.
-      - name: Set up JDK 17
+      # Provide BOTH pinned Gradle toolchains: 21 (transform) + 17 (decompile,
+      # and the topo-build-jvm-java backend tool's run-time javac). setup-java
+      # exports JAVA_HOME_21_<arch> + JAVA_HOME_17_<arch>, which the subprojects'
+      # gradle.properties `fromEnv` points at (with auto-download=false). The
+      # last version listed wins JAVA_HOME, so JAVA_HOME stays 17 for the
+      # backend tool. This replaces the auto-download that stalled ~20 min on
+      # the Windows runner.
+      - name: Set up JDKs (21 transform + 17 decompile/backend)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: |
+            21
+            17
 
       # Cache the Gradle artifacts (foojay-resolver plugin, ASM, gson, JUnit)
       # that the transform/ + decompile/ subprojects resolve from Maven Central
@@ -63,10 +69,9 @@ jobs:
       # the Build step. Restoring the cache means artifacts are fetched only on a
       # cold cache; restore-keys keeps a partial cache across dependency bumps.
       # Maven Central's operator (Sonatype) recommends caching over retrying for
-      # 429 resilience. Skipped on Windows, where the Gradle subprojects are
-      # gated OFF in the Configure step.
+      # 429 resilience. Cached on every OS now — Windows also builds the
+      # transform/decompile JARs, so it resolves the same Gradle artifacts.
       - name: Cache Gradle dependencies
-        if: runner.os != 'Windows'
         uses: actions/cache@v5
         with:
           path: |
@@ -152,32 +157,27 @@ jobs:
 
       - name: Configure topo-jvm
         # The bundled Gradle wrappers (transform/gradlew + decompile/gradlew)
-        # produce topo-transform.jar and topo-decompile-jvm-1.0.0.jar via
-        # CMake custom commands; setup-java already exported JAVA_HOME, so
-        # Gradle resolves a usable JDK.
-        #
-        # Windows: the Gradle subprojects (transform + decompile) hang
-        # mid-build at ~20+ min on this runner, while macOS/ubuntu finish
-        # the same step in ~2 min. Gate them OFF for Windows CI so the C++
-        # toolchain side (topo-build-jvm-java) still ships. NOTE: this means
-        # topo-transform.jar / topo-decompile-jvm are NOT built or tested on
-        # Windows at all — they are produced and verified on Linux/macOS only
-        # (the meta full job is Linux-only). The README "Windows" section
-        # documents this gap for users.
+        # produce topo-transform.jar and topo-decompile-jvm-1.0.0.jar via CMake
+        # custom commands. transform + decompile build on ALL platforms now,
+        # Windows included: the former ~20 min Windows hang was Gradle
+        # auto-downloading the pinned JDKs on Windows I/O. setup-java now
+        # provides 21 + 17 and the subprojects' gradle.properties
+        # (auto-download=false + fromEnv) point Gradle at them, so no download
+        # happens. TOPO_JVM_GRADLE_ARGS adds --no-daemon --console=plain for
+        # ephemeral-runner hygiene + clean logs.
         run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            GRADLE_ARGS="-DTOPO_JVM_BUILD_TRANSFORM=OFF -DTOPO_JVM_BUILD_DECOMPILE=OFF"
-          else
-            GRADLE_ARGS=""
-          fi
           cmake -S . -B build -G Ninja \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
               -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
               -DTOPO_JVM_BUILD_TESTS=ON \
-              ${GRADLE_ARGS}
+              -DTOPO_JVM_GRADLE_ARGS="--no-daemon --console=plain"
 
       - name: Build
+        # Backstop: if a Gradle toolchain ever fails to resolve and a fallback
+        # tries to download/hang, fail in minutes instead of burning the 6h job
+        # ceiling. A clean build (JARs + C++) finishes well under this.
+        timeout-minutes: 30
         run: cmake --build build
 
       - name: Test
@@ -221,13 +221,10 @@ jobs:
           int main() {
               namespace fs = std::filesystem;
               if (!fs::exists(TOPO_BUILD_JVM_JAVA_EXE)) return 1;
-              // Gradle subprojects are gated OFF on Windows CI for now;
-              // the JARs won't exist there. Only require them when the
-              // build produced them.
-              #ifndef _WIN32
+              // transform + decompile JARs are built on every platform now
+              // (Windows included), so require them everywhere.
               if (!fs::exists(TOPO_TRANSFORM_JAR)) return 1;
               if (!fs::exists(TOPO_DECOMPILE_JAR)) return 1;
-              #endif
               std::printf("topo-jvm find_package OK\n");
               return 0;
           }
@@ -275,15 +272,19 @@ jobs:
       - uses: actions/checkout@v5
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
 
-      # JDK 25 — benchmarks cross-compile via `javac --release {21,25}` and
-      # measure on a modern JVM; 25 covers both release targets. (The
-      # build-and-test job pins 17, enough for a plain build but not the full
-      # benchmark matrix.)
-      - name: Set up JDK 25
+      # JDK 25 for the benchmark measurement (javac --release {21,25}), PLUS the
+      # pinned Gradle toolchains 21 (transform) + 17 (decompile) — the subprojects
+      # require them explicitly now (gradle.properties auto-download=false +
+      # fromEnv), and this job also builds the transform/decompile JARs. 25 is
+      # listed last so JAVA_HOME stays 25 for the benchmark javac.
+      - name: Set up JDKs (25 benchmark + 21/17 Gradle toolchains)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: |
+            21
+            17
+            25
 
       # Cache the Gradle artifacts the transform/ + decompile/ subprojects
       # resolve from Maven Central (see the build-and-test job for the rationale)
@@ -411,6 +412,7 @@ jobs:
               -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
               -DTOPO_JVM_BUILD_TESTS=ON \
               -DTOPO_JVM_BUILD_E2E=ON \
+              -DTOPO_JVM_GRADLE_ARGS="--no-daemon --console=plain" \
               ${BENCH_FLAG}
 
       - name: Build

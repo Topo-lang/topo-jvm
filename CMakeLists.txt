@@ -100,6 +100,16 @@ if(TOPO_JVM_BUILD_TRANSFORM OR TOPO_JVM_BUILD_DECOMPILE)
     endif()
 endif()
 
+# Extra args appended to every CMake-driven Gradle invocation. Empty by default
+# so a local build keeps the daemon (org.gradle.daemon=true in the subprojects'
+# gradle.properties, which the comment there defends as the main speed-up). CI
+# sets "--no-daemon --console=plain": the daemon gives nothing on an ephemeral
+# runner torn down after one build, and plain console keeps the log free of
+# ANSI progress spam.
+set(TOPO_JVM_GRADLE_ARGS "" CACHE STRING
+    "Extra args appended to every Gradle invocation (e.g. --no-daemon --console=plain)")
+separate_arguments(_JVM_GRADLE_EXTRA_ARGS NATIVE_COMMAND "${TOPO_JVM_GRADLE_ARGS}")
+
 if(TOPO_JVM_BUILD_TOOLS)
     if(NOT TARGET topo::lang-java::TopoJavaPlugin)
         find_package(topo-lang-java CONFIG REQUIRED)
@@ -156,7 +166,7 @@ if(TOPO_JVM_BUILD_TRANSFORM)
         ${_TRANSFORM_DIR}/src/main/java/*.java)
     add_custom_command(
         OUTPUT ${_TRANSFORM_JAR}
-        COMMAND ${_JVM_GRADLE_ENV} ${_TRANSFORM_GRADLE} jar
+        COMMAND ${_JVM_GRADLE_ENV} ${_TRANSFORM_GRADLE} jar ${_JVM_GRADLE_EXTRA_ARGS}
         WORKING_DIRECTORY ${_TRANSFORM_DIR}
         DEPENDS ${_TRANSFORM_JAVA_SRC} ${_TRANSFORM_DIR}/build.gradle.kts
         COMMENT "Building topo-transform.jar via Gradle"
@@ -194,7 +204,7 @@ if(TOPO_JVM_BUILD_DECOMPILE)
         ${_DECOMPILE_DIR}/src/main/java/*.java)
     add_custom_command(
         OUTPUT ${_DECOMPILE_JAR}
-        COMMAND ${_JVM_GRADLE_ENV} ${_DECOMPILE_GRADLE} jar
+        COMMAND ${_JVM_GRADLE_ENV} ${_DECOMPILE_GRADLE} jar ${_JVM_GRADLE_EXTRA_ARGS}
         WORKING_DIRECTORY ${_DECOMPILE_DIR}
         DEPENDS ${_DECOMPILE_JAVA_SRC} ${_DECOMPILE_DIR}/build.gradle.kts
         COMMENT "Building topo-decompile-jvm-1.0.0.jar via Gradle"
