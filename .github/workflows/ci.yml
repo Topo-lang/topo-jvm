@@ -265,6 +265,10 @@ jobs:
     # nightly schedule).
     name: benchmark + e2e (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Cold 3-platform build + e2e finishes in well under this; the cap turns a
+    # hang (e.g. a stuck Gradle build on Windows) into a fast failure instead
+    # of burning the 6-hour default.
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -283,24 +287,23 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja
 
-      # Pinned Gradle toolchains 21 (transform) + 17 (decompile) — the
-      # subprojects require them explicitly (gradle.properties
-      # auto-download=false + fromEnv) and this job builds the transform/
-      # decompile JARs. 17 is listed LAST so JAVA_HOME=17, matching the
-      # build+test job (the proven 3-platform config): the topo runtime jar +
-      # e2e classes then compile to a Java-17 baseline (class v61) loadable by
-      # every test runtime. Letting 25 win JAVA_HOME compiled dev/topo/Observe
-      # to class v69, which the Java-21 e2e test runtime cannot load
-      # (UnsupportedClassVersionError). 25 stays installed (JAVA_HOME_25_*) for
-      # the workflow_dispatch timing javac --release 25.
-      - name: Set up JDKs (17 default + 21 transform; 25 for dispatch timing)
+      # 21 is listed LAST so JAVA_HOME=21 — the value that satisfies BOTH e2e
+      # constraints: (a) the topo-build-jvm-java backend tool runs
+      # `javac --release 21`, which needs a javac >= 21 (JAVA_HOME=17 fails with
+      # "release version 21 not supported"); (b) the topo runtime jar is built
+      # by Gradle at TOPO_GRADLE_JAVA_HOME=JAVA_HOME, so JAVA_HOME=21 yields
+      # class v65, loadable by the Java-21 e2e test runtime (JAVA_HOME=25
+      # produced v69 → UnsupportedClassVersionError). 17 stays installed
+      # (decompile toolchain via fromEnv) and 25 for the dispatch-only timing
+      # javac --release 25.
+      - name: Set up JDKs (21 default/transform + 17 decompile; 25 dispatch timing)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: |
             25
-            21
             17
+            21
 
       # Cache the Gradle artifacts the transform/ + decompile/ subprojects
       # resolve from Maven Central (see the build-and-test job for the rationale)
@@ -338,7 +341,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v3-jvmbackend
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v4-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
