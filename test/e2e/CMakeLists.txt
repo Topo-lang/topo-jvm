@@ -12,6 +12,17 @@ if(NOT TARGET ${TOPO_BUILD_TARGET})
         "ensure find_package(topo-cli CONFIG) at top level succeeded.")
 endif()
 
+# MinGW on GHA: static-link the C++ runtime so the e2e test exes are hermetic.
+# gtest_discover_tests launches each binary at build time; without this they
+# fail with STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139) / "unknown error" because
+# the MinGW libstdc++/libgcc/libwinpthread DLLs aren't on PATH. test/CMakeLists.txt
+# applies this for unit/, but test/e2e is add_subdirectory'd from the root scope
+# (not from within test/), so it does NOT inherit those link options — set them
+# here too.
+if(MINGW)
+    add_link_options(-static -static-libgcc -static-libstdc++)
+endif()
+
 add_library(E2eHarnessJvm OBJECT E2eHarness.cpp)
 target_link_libraries(E2eHarnessJvm PUBLIC topo::core::TopoPlatform GTest::gtest_main)
 target_include_directories(E2eHarnessJvm PUBLIC
