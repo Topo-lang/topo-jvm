@@ -48,52 +48,33 @@ target_link_libraries(topo-e2e-java PRIVATE E2eHarnessJvm)
 # cases still serialise (the swap/cache mutation that motivated the
 # lock is per-project).
 include(GoogleTest)
-# JAVA_HOME + PATH injection — TOPO_E2E_JAVA_HOME is the JDK ≥21 probed
-# at top scope. The Java functional / benchmark / equivalence cases all
-# shell out to topo-build → topo-build-jvm-java → javac and need both
-# the backend tool on PATH and a JDK ≥21 for the transform jar.
+# JVM toolchain env for the e2e cases. They shell out to
+# topo-build -> topo-build-jvm-java -> javac, so the backend tool dir must be
+# on PATH and (for the transform jar) a JDK >=21 reachable via JAVA_HOME.
+# TOPO_E2E_JAVA_HOME is the JDK >=21 probed at top scope.
 #
-# Use a thin wrapper script as TEST_EXECUTOR — gtest_discover_tests's
-# TEST_PROPERTIES path splits values on `;`, which mangles a multi-entry
-# ENVIRONMENT property; a wrapper sidesteps that by exporting the env
-# before exec'ing the test binary.
-# Use PROJECT_BINARY_DIR (the topo-jvm project's binary dir, set via the
-# project(topo-jvm) call) rather than CMAKE_BINARY_DIR. Standalone:
-# PROJECT_BINARY_DIR == build root, both work. Meta-embedded under
-# add_subdirectory(topo-jvm): CMAKE_BINARY_DIR is the meta build root
-# (e.g. build/ci-full/) which does NOT contain tools/topo-build-jvm-java —
-# the binary lives at build/ci-full/topo-jvm/tools/topo-build-jvm-java/,
-# which is what PROJECT_BINARY_DIR resolves to.
+# Injected IN-PROCESS by the e2e harness SetUp() via setenv/_putenv_s (see
+# E2eHarness.cpp), NOT via a TEST_LAUNCHER wrapper. The previous
+# run-with-jvm-env.sh wrapper could not serve as a CTest TEST_LAUNCHER on
+# windows-2022 (a POSIX .sh is not executable there), which broke gtest
+# discovery; the per-test ENVIRONMENT property is no use either (its value is
+# `;`-split, mangling a Windows PATH). The harness reads these compile-time
+# defines and prepends them to the process env, so the test process + its whole
+# subprocess chain inherit them on every platform.
+#
+# PROJECT_BINARY_DIR (not CMAKE_BINARY_DIR): standalone they coincide;
+# meta-embedded under add_subdirectory(topo-jvm), CMAKE_BINARY_DIR is the meta
+# root (which lacks tools/topo-build-jvm-java) while PROJECT_BINARY_DIR resolves
+# to build/<preset>/topo-jvm/, which holds it.
 set(_E2E_TOPO_BUILD_JVM_DIR
     "${PROJECT_BINARY_DIR}/tools/topo-build-jvm-java")
+target_compile_definitions(E2eHarnessJvm PUBLIC
+    TOPO_E2E_JVM_TOOLS_DIR="${_E2E_TOPO_BUILD_JVM_DIR}")
 if(TOPO_E2E_JAVA_HOME)
-    set(_E2E_PATH "${_E2E_TOPO_BUILD_JVM_DIR}:${TOPO_E2E_JAVA_HOME}/bin:$ENV{PATH}")
-else()
-    set(_E2E_PATH "${_E2E_TOPO_BUILD_JVM_DIR}:$ENV{PATH}")
+    target_compile_definitions(E2eHarnessJvm PUBLIC
+        TOPO_E2E_JAVA_HOME_VALUE="${TOPO_E2E_JAVA_HOME}")
 endif()
-set(_E2E_WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/run-with-jvm-env.sh")
-if(TOPO_E2E_JAVA_HOME)
-    file(WRITE "${_E2E_WRAPPER}"
-"#!/bin/sh
-# Auto-generated: export JDK ≥21 + tool PATH for topo-jvm e2e tests.
-export JAVA_HOME=\"${TOPO_E2E_JAVA_HOME}\"
-export PATH=\"${_E2E_PATH}\"
-exec \"$@\"
-")
-else()
-    file(WRITE "${_E2E_WRAPPER}"
-"#!/bin/sh
-# Auto-generated: export tool PATH for topo-jvm e2e tests (no JDK ≥21 found).
-export PATH=\"${_E2E_PATH}\"
-exec \"$@\"
-")
-endif()
-file(CHMOD "${_E2E_WRAPPER}" PERMISSIONS
-    OWNER_READ OWNER_WRITE OWNER_EXECUTE
-    GROUP_READ GROUP_EXECUTE
-    WORLD_READ WORLD_EXECUTE)
 
-set_target_properties(topo-e2e-java PROPERTIES TEST_LAUNCHER "${_E2E_WRAPPER}")
 gtest_discover_tests(topo-e2e-java DISCOVERY_TIMEOUT 30
     PROPERTIES
         LABELS "e2e;java"
@@ -156,7 +137,6 @@ endif()
 #     shared with LLVM benches so no LLVM + JVM benchmarks race on CPU.
 # See `topo-llvm/test/e2e/CMakeLists.txt` for the cross-backend lock pairing.
 include(GoogleTest)
-set_target_properties(topo-e2e-jvm-bench PROPERTIES TEST_LAUNCHER "${_E2E_WRAPPER}")
 gtest_discover_tests(topo-e2e-jvm-bench DISCOVERY_TIMEOUT 30
     PROPERTIES
         LABELS "e2e;perf;benchmark"
@@ -182,7 +162,6 @@ target_link_libraries(topo-e2e-jvm-equiv PRIVATE E2eHarnessJvm)
 # TEST_F whose body does not match a known build/assert helper gets a
 # unique "topo_e2e_jvm_unscoped_<Name>" lock — no collision possible.
 include(GoogleTest)
-set_target_properties(topo-e2e-jvm-equiv PROPERTIES TEST_LAUNCHER "${_E2E_WRAPPER}")
 # The LABELS list here is mis-parsed by CTest: gtest_discover_tests writes it
 # UNQUOTED into the generated *_tests.cmake (`LABELS e2e equivalence
 # jvm_equivalence`), which CTest reads as LABELS=e2e plus a bogus

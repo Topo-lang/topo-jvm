@@ -91,6 +91,55 @@ void E2eFixture::SetUp() {
 #ifdef TOPO_JVM_BENCHMARKS_DIR
     jvmBenchmarksDir_ = fs::path(TOPO_JVM_BENCHMARKS_DIR);
 #endif
+
+    // JVM toolchain env injection (cross-platform). Replaces the former
+    // run-with-jvm-env.sh TEST_LAUNCHER: a POSIX .sh cannot serve as a CTest
+    // TEST_LAUNCHER on windows-2022, which broke gtest discovery there. The
+    // functional / equivalence / benchmark cases shell out to
+    // topo-build -> topo-build-jvm-java -> javac, so the backend tool dir must
+    // be on PATH and a JDK >=21 reachable via JAVA_HOME. setenv/_putenv_s is
+    // process-global, so the test process and its whole subprocess chain (and
+    // runJar's getenv("JAVA_HOME")) inherit it — the same setenv/_putenv_s
+    // pattern topo-llvm's e2e harness uses for its backend tool dirs.
+    {
+#ifdef _WIN32
+        const char pathSep = ';';
+#else
+        const char pathSep = ':';
+#endif
+        std::string pathPrefix;
+#ifdef TOPO_E2E_JVM_TOOLS_DIR
+        if (std::strlen(TOPO_E2E_JVM_TOOLS_DIR) > 0) {
+            pathPrefix = TOPO_E2E_JVM_TOOLS_DIR;
+        }
+#endif
+#ifdef TOPO_E2E_JAVA_HOME_VALUE
+        if (std::strlen(TOPO_E2E_JAVA_HOME_VALUE) > 0) {
+            const std::string javaHome = TOPO_E2E_JAVA_HOME_VALUE;
+#ifdef _WIN32
+            _putenv_s("JAVA_HOME", javaHome.c_str());
+#else
+            setenv("JAVA_HOME", javaHome.c_str(), 1);
+#endif
+            const std::string javaBin = (fs::path(javaHome) / "bin").string();
+            if (!pathPrefix.empty()) pathPrefix += pathSep;
+            pathPrefix += javaBin;
+        }
+#endif
+        if (!pathPrefix.empty()) {
+            const char* oldPath = std::getenv("PATH");
+            std::string newPath = pathPrefix;
+            if (oldPath && *oldPath) {
+                newPath += pathSep;
+                newPath += oldPath;
+            }
+#ifdef _WIN32
+            _putenv_s("PATH", newPath.c_str());
+#else
+            setenv("PATH", newPath.c_str(), 1);
+#endif
+        }
+    }
 }
 
 // ============================================================================
