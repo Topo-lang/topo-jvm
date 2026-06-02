@@ -274,9 +274,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # windows-2022 deferred: the cold full-stack Gradle bootstrap hangs on
-        # the Windows runner. Bring macOS + Linux green first, then re-add it.
-        os: [ubuntu-24.04, macos-14]
+        # windows-2022 re-added: the cold full-stack Gradle bootstrap hang was
+        # the persistent Gradle daemon. topo-lang-java now takes
+        # --no-daemon via TOPO_LANG_JAVA_GRADLE_ARGS (passed on its configure
+        # step below), and topo-jvm already passes TOPO_JVM_GRADLE_ARGS — so all
+        # Gradle roots build daemonless on the ephemeral Windows runner.
+        os: [ubuntu-24.04, macos-14, windows-2022]
     steps:
       - uses: actions/checkout@v5
 
@@ -342,7 +345,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v4-jvmbackend
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v5-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
@@ -394,6 +397,7 @@ jobs:
                 -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
                 -DTOPO_LANG_JAVA_BUILD_TESTS=OFF \
                 -DTOPO_LANG_JAVA_ENABLE_JVM_BACKEND=ON \
+                -DTOPO_LANG_JAVA_GRADLE_ARGS="--no-daemon --console=plain" \
                 -DTOPO_GRADLE_JAVA_HOME="${JAVA_HOME}"
           cmake --build "${RUNNER_TEMP}/topo-lang-java-build" --target install
 
