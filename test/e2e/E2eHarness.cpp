@@ -16,6 +16,20 @@
 
 namespace topo::test::e2e {
 
+namespace {
+// std::filesystem::copy_file with overwrite_existing is unreliable on
+// MinGW/Windows: it can fail with EEXIST ("File exists") when the destination
+// already exists instead of overwriting (observed on the windows-2022 e2e —
+// the Topo-base/forced.toml swap aborted "failed to swap ...: File exists").
+// Remove the destination first, then copy into the now-absent path — portable
+// and equivalent to an overwrite on every platform.
+void overwriteCopy(const fs::path& from, const fs::path& to, std::error_code& ec) {
+    std::error_code rmEc;
+    fs::remove(to, rmEc); // ignore "does not exist"
+    fs::copy_file(from, to, ec);
+}
+} // namespace
+
 // ============================================================================
 // TopoTomlSwap RAII guard
 // ============================================================================
@@ -30,16 +44,16 @@ TopoTomlSwap::TopoTomlSwap(const fs::path& projDir, const std::string& altTomlNa
         return;
     }
     std::error_code ec;
-    fs::copy_file(topoToml_, saved_, fs::copy_options::overwrite_existing, ec);
+    overwriteCopy(topoToml_, saved_, ec);
     if (ec) {
         error_ = "failed to back up Topo.toml: " + ec.message();
         return;
     }
-    fs::copy_file(alt, topoToml_, fs::copy_options::overwrite_existing, ec);
+    overwriteCopy(alt, topoToml_, ec);
     if (ec) {
         // Saved file is on disk; try a best-effort restore before reporting.
         std::error_code restoreEc;
-        fs::copy_file(saved_, topoToml_, fs::copy_options::overwrite_existing, restoreEc);
+        overwriteCopy(saved_, topoToml_, restoreEc);
         fs::remove(saved_, restoreEc);
         error_ = "failed to swap " + altTomlName + " into Topo.toml: " + ec.message();
         return;
@@ -53,7 +67,7 @@ TopoTomlSwap::~TopoTomlSwap() {
     // fails (very unusual: project tree gone, disk full) the saved file
     // is left in place so a developer / CI tripwire can recover by hand.
     std::error_code ec;
-    fs::copy_file(saved_, topoToml_, fs::copy_options::overwrite_existing, ec);
+    overwriteCopy(saved_, topoToml_, ec);
     if (!ec) {
         fs::remove(saved_, ec);
     }
