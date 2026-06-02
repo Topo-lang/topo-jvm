@@ -276,18 +276,22 @@ jobs:
     # nightly schedule).
     name: benchmark + e2e (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Cold build + e2e finishes well under this; the cap turns a hang into a
-    # fast failure instead of burning the 6-hour default.
-    timeout-minutes: 45
+    # Bounds a runaway instead of burning the 6-hour default. 60 (was 45) gives
+    # the cold windows-2022 full-stack bootstrap headroom to build + populate its
+    # caches on the first run; ubuntu/macos finish well under it.
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
     strategy:
       fail-fast: false
       matrix:
-        # windows-2022 deferred: the cold full-stack Gradle bootstrap hangs on
-        # the Windows runner. Bring macOS + Linux green first, then re-add it.
-        os: [ubuntu-24.04, macos-14]
+        # windows-2022 re-added: the cold-bootstrap Gradle DAEMON hang is fixed
+        # (--no-daemon on both topo-jvm and the lang-java JVM-backend runtime-jar
+        # build below), and the e2e .sh TEST_LAUNCHER that broke gtest discovery
+        # on Windows is replaced by in-harness setenv/_putenv_s env injection
+        # (E2eHarness.cpp). First Windows iterations are blind (no local Windows).
+        os: [ubuntu-24.04, macos-14, windows-2022]
     steps:
       - uses: actions/checkout@v5
 
@@ -353,7 +357,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v4-jvmbackend
+          # v5: re-clone+rebuild topo-cli@main to pick up the Windows
+          # .jar.exe output-suffix fix (Topo-lang/topo-cli#3). The cache is
+          # keyed on REF=main, so without a bump a hit would serve the stale
+          # buggy topo-cli install the prior windows run saved.
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v5-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
@@ -405,7 +413,8 @@ jobs:
                 -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
                 -DTOPO_LANG_JAVA_BUILD_TESTS=OFF \
                 -DTOPO_LANG_JAVA_ENABLE_JVM_BACKEND=ON \
-                -DTOPO_GRADLE_JAVA_HOME="${JAVA_HOME}"
+                -DTOPO_GRADLE_JAVA_HOME="${JAVA_HOME}" \
+                -DTOPO_LANG_JAVA_GRADLE_ARGS="--no-daemon --console=plain"
           cmake --build "${RUNNER_TEMP}/topo-lang-java-build" --target install
 
       # topo-cli provides the `topo-build` executable the benchmark artifact
