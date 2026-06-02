@@ -357,7 +357,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v4-jvmbackend
+          # v5: re-clone+rebuild topo-cli@main to pick up the Windows
+          # .jar.exe output-suffix fix (Topo-lang/topo-cli#3). The cache is
+          # keyed on REF=main, so without a bump a hit would serve the stale
+          # buggy topo-cli install the prior windows run saved.
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v5-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
