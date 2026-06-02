@@ -12,6 +12,18 @@ if(NOT TARGET ${TOPO_BUILD_TARGET})
         "ensure find_package(topo-cli CONFIG) at top level succeeded.")
 endif()
 
+# MinGW on GHA: the e2e test exes are launched at gtest DISCOVERY time —
+# topo-e2e-jvm-bench uses DISCOVERY_MODE POST_BUILD, so its exe runs at BUILD
+# time, before the Test step's build-time-gcc PATH prepend exists. A
+# dynamically MinGW-linked exe then aborts with 0xC0000139
+# (STATUS_ENTRYPOINT_NOT_FOUND) because libstdc++-6.dll is not resolvable,
+# failing the Build. Static-link the C++ runtime so every e2e exe in THIS
+# directory is hermetic. Must be set here: a root-scope add_link_options does
+# not reach a test/e2e dir add_subdirectory'd from the root.
+if(MINGW)
+    add_link_options(-static -static-libgcc -static-libstdc++)
+endif()
+
 add_library(E2eHarnessJvm OBJECT E2eHarness.cpp)
 target_link_libraries(E2eHarnessJvm PUBLIC topo::core::TopoPlatform GTest::gtest_main)
 target_include_directories(E2eHarnessJvm PUBLIC
@@ -68,11 +80,19 @@ include(GoogleTest)
 # to build/<preset>/topo-jvm/, which holds it.
 set(_E2E_TOPO_BUILD_JVM_DIR
     "${PROJECT_BINARY_DIR}/tools/topo-build-jvm-java")
+# Bake the paths as forward-slash (TO_CMAKE_PATH). A Windows JAVA_HOME like
+# C:\hostedtoolcache\...\jdk has backslashes that a C string literal reads as
+# escape sequences (`warning: unknown escape sequence '\J'` → corrupted value).
+# Forward slashes are valid for JAVA_HOME, PATH, and fs::path on Windows and a
+# no-op on POSIX. (PROJECT_BINARY_DIR is already forward-slash; normalised too
+# for consistency.)
+file(TO_CMAKE_PATH "${_E2E_TOPO_BUILD_JVM_DIR}" _E2E_TOPO_BUILD_JVM_DIR_FWD)
 target_compile_definitions(E2eHarnessJvm PUBLIC
-    TOPO_E2E_JVM_TOOLS_DIR="${_E2E_TOPO_BUILD_JVM_DIR}")
+    TOPO_E2E_JVM_TOOLS_DIR="${_E2E_TOPO_BUILD_JVM_DIR_FWD}")
 if(TOPO_E2E_JAVA_HOME)
+    file(TO_CMAKE_PATH "${TOPO_E2E_JAVA_HOME}" _E2E_JAVA_HOME_FWD)
     target_compile_definitions(E2eHarnessJvm PUBLIC
-        TOPO_E2E_JAVA_HOME_VALUE="${TOPO_E2E_JAVA_HOME}")
+        TOPO_E2E_JAVA_HOME_VALUE="${_E2E_JAVA_HOME_FWD}")
 endif()
 
 gtest_discover_tests(topo-e2e-java DISCOVERY_TIMEOUT 30
