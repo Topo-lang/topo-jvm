@@ -86,7 +86,12 @@ public class AdaptivePass implements BasePass {
     public ClassVisitor createVisitor(ClassWriter writer) {
         return new ClassVisitor(Opcodes.ASM9, writer) {
             private String className;
-            private final List<String> adaptedCounterFields = new ArrayList<>();
+            // Use a Set so two overloads sharing the same method name
+            // (process(I)V and process(J)V) — which derive the same
+            // method-name-only counter field and the same dispatch token —
+            // emit the counter field exactly once. A duplicate field of the
+            // same name+type is a ClassFormatError at load time.
+            private final Set<String> adaptedCounterFields = new LinkedHashSet<>();
 
             @Override
             public void visit(int version, int access, String name, String signature,

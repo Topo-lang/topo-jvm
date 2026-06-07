@@ -385,8 +385,19 @@ public class LoopVectorizePass implements BasePass {
             if (!hasFloatArrayLoad) return result;
             if (result.arithmeticOps.isEmpty()) return result;
 
+            // The reduction code generators below seed the accumulator with
+            // FloatVector.zero(SPECIES) and finalize with
+            // reduceLanes(VectorOperators.ADD) — correct ONLY for FADD. A
+            // product / FSUB / FDIV reduction has a different identity (1.0 for
+            // product) and a different lane reducer; emitting the ADD path
+            // would silently return a wrong result. Decline so the original
+            // scalar loop is preserved.
+            boolean reductionOpSupported = result.arithmeticOps.size() == 1
+                && result.arithmeticOps.get(0) == Opcodes.FADD;
+
             // Gathered access reduction: data[indices[i]] with accumulator
             if (result.hasGatheredAccess && reductionVar >= 0) {
+                if (!reductionOpSupported) return result;
                 result.isVectorizable = true;
                 result.hasReduction = true;
                 result.reductionVar = reductionVar;
@@ -396,12 +407,22 @@ public class LoopVectorizePass implements BasePass {
             // Determine pattern
             if (reductionVar >= 0 && !hasFloatArrayStore) {
                 // Reduction pattern: sum += a[i]
+                if (!reductionOpSupported) return result;
                 result.isVectorizable = true;
                 result.hasReduction = true;
                 result.reductionVar = reductionVar;
                 result.sourceArrayLocals.addAll(arrayLoadLocals);
-            } else if (hasFloatArrayStore && arrayLoadLocals.size() >= 1) {
-                // Array op pattern: a[i] = b[i] <op> c[i]  or  a[i] = b[i] <op> scalar
+            } else if (hasFloatArrayStore && arrayLoadLocals.size() == 2
+                       && result.arithmeticOps.size() == 1) {
+                // Array op pattern the rewriter actually implements:
+                //   a[i] = b[i] <op> c[i]
+                // The codegen loads exactly two source vectors and applies one
+                // op between them. A single-source scalar-op loop
+                // (a[i] = b[i] <op> scalar) would have its scalar arithmetic
+                // dropped, and a 3+-source loop (a[i] = b[i]+c[i]+d[i]) would
+                // drop every op past the first — both miscompiles. Accept only
+                // the two-source / one-op shape and let everything else fall
+                // through to the unchanged scalar loop.
                 result.isVectorizable = true;
                 result.hasReduction = false;
                 result.sourceArrayLocals.addAll(arrayLoadLocals);
@@ -558,21 +579,18 @@ public class LoopVectorizePass implements BasePass {
                 replacement.add(new VarInsnNode(Opcodes.ASTORE, vecLocals[s]));
             }
 
-            // Apply arithmetic: vec0 <op> vec1 → result
-            if (body.sourceArrayLocals.size() >= 2 && !body.arithmeticOps.isEmpty()) {
-                replacement.add(new VarInsnNode(Opcodes.ALOAD, vecLocals[0]));
-                replacement.add(new VarInsnNode(Opcodes.ALOAD, vecLocals[1]));
-                String vecMethod = vectorMethodName(body.arithmeticOps.get(0));
-                replacement.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, FLOAT_VECTOR,
-                        vecMethod,
-                        "(L" + VECTOR_BASE + ";)L" + FLOAT_VECTOR + ";",
-                        false));
-                replacement.add(new VarInsnNode(Opcodes.ASTORE, resultVecLocal));
-            } else if (body.sourceArrayLocals.size() == 1) {
-                // Single array with scalar op — store as-is for now
-                replacement.add(new VarInsnNode(Opcodes.ALOAD, vecLocals[0]));
-                replacement.add(new VarInsnNode(Opcodes.ASTORE, resultVecLocal));
-            }
+            // Apply arithmetic: vec0 <op> vec1 → result.
+            // analyzeBody() only marks the array-op path vectorizable for
+            // exactly two source arrays and exactly one op, so this is the only
+            // shape the codegen has to (and can correctly) emit.
+            replacement.add(new VarInsnNode(Opcodes.ALOAD, vecLocals[0]));
+            replacement.add(new VarInsnNode(Opcodes.ALOAD, vecLocals[1]));
+            String vecMethod = vectorMethodName(body.arithmeticOps.get(0));
+            replacement.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, FLOAT_VECTOR,
+                    vecMethod,
+                    "(L" + VECTOR_BASE + ";)L" + FLOAT_VECTOR + ";",
+                    false));
+            replacement.add(new VarInsnNode(Opcodes.ASTORE, resultVecLocal));
 
             // Store result: result.intoArray(destArray, i)
             replacement.add(new VarInsnNode(Opcodes.ALOAD, resultVecLocal));

@@ -342,11 +342,33 @@ public class BytecodeVerifier {
                 var mn = methodIndex.get(k);
                 if (mn == null || mn.instructions == null) continue;
 
-                // Scan for invoke instructions
+                // Scan for invoke instructions. The stage map (buildStageMap)
+                // keys callees namespace-qualified (e.g. `app::taskA`) because
+                // .topo declarations omit the host class, while a bytecode call
+                // carries the full JVM owner (e.g. `app/Main`). Reconstruct
+                // BOTH the class-qualified form (`app::Main::taskA`) and the
+                // namespace-qualified form (`app::taskA`, owner minus the class
+                // segment) and look up whichever the map holds — otherwise the
+                // lookup is always null and the check is dead for every
+                // class-member / free function.
                 for (var insn : mn.instructions) {
                     if (insn instanceof MethodInsnNode call) {
-                        String calleeName = call.owner.replace("/", "::") + "::" + call.name;
-                        Integer calleeStage = stageMap.get(calleeName);
+                        String classQualified = call.owner.replace("/", "::") + "::" + call.name;
+                        Integer calleeStage = stageMap.get(classQualified);
+                        String calleeName = classQualified;
+                        if (calleeStage == null) {
+                            int lastSlash = call.owner.lastIndexOf('/');
+                            if (lastSlash >= 0) {
+                                String namespaceQualified =
+                                    call.owner.substring(0, lastSlash).replace("/", "::")
+                                    + "::" + call.name;
+                                Integer nsStage = stageMap.get(namespaceQualified);
+                                if (nsStage != null) {
+                                    calleeStage = nsStage;
+                                    calleeName = namespaceQualified;
+                                }
+                            }
+                        }
                         if (calleeStage != null && calleeStage > myStage) {
                             result.stageOrderViolations++;
                             result.errors.add("stage order violation: " + name + " (stage " + myStage +
@@ -496,7 +518,14 @@ public class BytecodeVerifier {
         for (var group : stageGroups.values()) {
             if (group.size() < 2) continue;
 
-            var writtenFields = new HashSet<String>();
+            // Record, per field, the set of distinct methods that write it.
+            // Keying on field name alone (and flagging on the second write) is
+            // wrong: a SINGLE method writing the same field twice
+            // (`this.x = 0; ... this.x = y;`) is legitimate and must not be
+            // reported. Flag only when two DISTINCT methods in the stage write
+            // the same field — that is the actual pairwise-write race this
+            // heuristic targets.
+            var writersByField = new HashMap<String, Set<MethodKey>>();
             for (String name : group) {
                 String jvmClass = mapper.toJvmClassName(name);
                 String methodName = mapper.extractMethodName(name);
@@ -511,14 +540,20 @@ public class BytecodeVerifier {
                             if (insn.getOpcode() == Opcodes.PUTFIELD ||
                                 insn.getOpcode() == Opcodes.PUTSTATIC) {
                                 String fieldKey = field.owner + "." + field.name;
-                                if (!writtenFields.add(fieldKey)) {
-                                    result.sharedMutableFieldWrites++;
-                                    result.errors.add("shared-mutable-field write: " +
-                                        fieldKey + " written by multiple methods in the same parallel stage");
-                                }
+                                writersByField
+                                    .computeIfAbsent(fieldKey, f -> new HashSet<>())
+                                    .add(k);
                             }
                         }
                     }
+                }
+            }
+            for (var fieldEntry : writersByField.entrySet()) {
+                if (fieldEntry.getValue().size() >= 2) {
+                    result.sharedMutableFieldWrites++;
+                    result.errors.add("shared-mutable-field write: " +
+                        fieldEntry.getKey() +
+                        " written by multiple methods in the same parallel stage");
                 }
             }
         }

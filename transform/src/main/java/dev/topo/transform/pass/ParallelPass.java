@@ -28,6 +28,12 @@ public class ParallelPass implements BasePass {
     private final JsonObject metadata;
     /** Qualified names of methods that orchestrate parallel work. */
     private final Set<String> orchestrators;
+    /** Qualified names (namespace- or class-level, mirroring the metadata
+     *  shape) of the callees that actually belong to a parallel stage — i.e.
+     *  appear in a stage group with 2+ functions. Only these may be hoisted
+     *  into Parallel.spawn(); sequential setup / logging / dependency-ordered
+     *  calls are left untouched so their ordering is preserved. */
+    private final Set<String> parallelStageCallees;
     /** host_method → spawn_sites count. Populated as the adapter wraps
      *  eligible INVOKESTATIC()V calls in Parallel.spawn(). Sidecar schema:
      *  `parallel_split:[{host_method, spawn_sites:<int>}]`. */
@@ -37,6 +43,7 @@ public class ParallelPass implements BasePass {
         this.config = config;
         this.metadata = metadata;
         this.orchestrators = buildOrchestratorSet();
+        this.parallelStageCallees = buildParallelStageCallees();
     }
 
     /** Per-method spawn-site counts aggregated across visited classes. */
@@ -97,6 +104,53 @@ public class ParallelPass implements BasePass {
         return result;
     }
 
+    /**
+     * Builds the set of callee names that genuinely belong to a parallel
+     * stage: within each logic block, group {@code calledFunctions} by stage,
+     * and collect every function in a stage group of size &geq; 2. Names are
+     * qualified against the block's namespace, mirroring the stage-map shape
+     * the verifier and other passes use, so the adapter can match a bytecode
+     * call against either the namespace- or class-qualified form.
+     */
+    private Set<String> buildParallelStageCallees() {
+        Set<String> result = new HashSet<>();
+        if (!metadata.has("logicBlocks")) return result;
+        for (var entry : metadata.getAsJsonObject("logicBlocks").entrySet()) {
+            var block = entry.getValue().getAsJsonObject();
+            if (!block.has("calledFunctions") || !block.has("stages")) continue;
+            var calledFunctions = block.getAsJsonArray("calledFunctions");
+            var stages = block.getAsJsonArray("stages");
+            String blockQName = block.get("qualifiedName").getAsString();
+            String namespace = blockQName.contains("::")
+                ? blockQName.substring(0, blockQName.lastIndexOf("::"))
+                : "";
+            // Group functions by stage within this block
+            Map<Integer, List<String>> stageGroups = new HashMap<>();
+            for (int i = 0; i < calledFunctions.size() && i < stages.size(); i++) {
+                int stage = stages.get(i).getAsInt();
+                String simpleName = calledFunctions.get(i).getAsString();
+                String qualifiedCallee = namespace.isEmpty()
+                    ? simpleName : namespace + "::" + simpleName;
+                stageGroups.computeIfAbsent(stage, k -> new ArrayList<>()).add(qualifiedCallee);
+            }
+            for (var group : stageGroups.values()) {
+                if (group.size() >= 2) result.addAll(group);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * True when a bytecode call to {@code owner::name} targets a function that
+     * the metadata places in an actual parallel stage. Matches both the
+     * class-qualified ({@code app::Main::taskA}) and namespace-qualified
+     * ({@code app::taskA}) forms, since {@code .topo} declarations may omit the
+     * host class name.
+     */
+    private boolean isParallelStageCallee(String owner, String name) {
+        return QualifiedNameMatch.contains(parallelStageCallees, owner, name);
+    }
+
     private boolean shouldParallelize(String className, String methodName) {
         // Full class-qualified: app::Main::runFriendly
         String qualifiedName = className.replace("/", "::") + "::" + methodName;
@@ -145,8 +199,12 @@ public class ParallelPass implements BasePass {
         @Override
         public void visitMethodInsn(int opcode, String owner, String name,
                                      String descriptor, boolean isInterface) {
-            if (opcode == Opcodes.INVOKESTATIC && descriptor.equals("()V")) {
-                // Wrap in lambda via INVOKEDYNAMIC -> Parallel.spawn() -> add to list
+            if (opcode == Opcodes.INVOKESTATIC && descriptor.equals("()V")
+                    && outer.isParallelStageCallee(owner, name)) {
+                // Wrap in lambda via INVOKEDYNAMIC -> Parallel.spawn() -> add to list.
+                // Restricted to callees the metadata places in an actual
+                // parallel stage — sequential stage-0 setup, logging and
+                // dependency-ordered calls keep their original ordering.
                 Handle bootstrap = new Handle(
                         Opcodes.H_INVOKESTATIC,
                         "java/lang/invoke/LambdaMetafactory",

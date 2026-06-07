@@ -140,16 +140,30 @@ public class TypeNarrowingPass implements BasePass {
                 if (!(next instanceof TypeInsnNode cast)) continue;
                 if (cast.getOpcode() != Opcodes.CHECKCAST) continue;
 
-                // Find the index load instruction (right before INVOKEVIRTUAL)
+                // Find the index load instruction (right before INVOKEVIRTUAL).
+                // The rewrite clones this single instruction to re-supply the
+                // index after rawData(); that is only correct when the index is
+                // a SELF-CONTAINED value push (consumes nothing, pushes exactly
+                // one int). A field-backed index (`this.idx` →
+                // ALOAD this; GETFIELD idx) is NOT self-contained: the GETFIELD
+                // consumes the `ALOAD this` pushed just before it. The old code
+                // then mistook that `ALOAD this` for the array ref, emitted
+                // rawData() on `this`, and orphaned the real array load —
+                // type-incorrect, stack-imbalanced bytecode. Decline unless the
+                // index is a single self-contained int producer.
                 AbstractInsnNode indexInsn = findPrevCode(insns, i - 1);
                 if (indexInsn == null) continue;
+                if (!isSelfContainedIndex(indexInsn)) continue;
 
-                // Find the instruction that pushes the Array ref (before the index).
-                // Can be ALOAD (local var), GETSTATIC (static field), or
-                // ALOAD+GETFIELD (instance field).
+                // Find the instruction that pushes the Array ref (immediately
+                // before the index). Only a self-contained reference push —
+                // ALOAD (local) or GETSTATIC (static field) — can be cloned in
+                // isolation. A GETFIELD array ref would need its preceding
+                // object-ref load re-materialized too, which a single-node
+                // clone cannot do, so it is declined as well.
                 AbstractInsnNode arrayLoadInsn = findPrevCode(insns, indexOf(insns, indexInsn) - 1);
                 if (arrayLoadInsn == null) continue;
-                if (!isArrayRefLoad(arrayLoadInsn)) continue;
+                if (!isSelfContainedArrayRefLoad(arrayLoadInsn)) continue;
 
                 sites.add(new NarrowingSite(arrayLoadInsn, indexInsn, mi, cast));
             }
@@ -188,12 +202,36 @@ public class TypeNarrowingPass implements BasePass {
             instructions.remove(site.castInsn);
         }
 
-        /** Check if an instruction loads an object reference (Array) onto the stack. */
-        private static boolean isArrayRefLoad(AbstractInsnNode insn) {
+        /**
+         * True for a single instruction that pushes the array reference and
+         * consumes nothing — safe to clone in isolation. ALOAD reads a local
+         * and GETSTATIC reads a static field; both leave the stack below them
+         * untouched. GETFIELD is deliberately excluded: it consumes an
+         * object-ref that a single-node clone cannot reproduce.
+         */
+        private static boolean isSelfContainedArrayRefLoad(AbstractInsnNode insn) {
             if (insn instanceof VarInsnNode vi && vi.getOpcode() == Opcodes.ALOAD) return true;
             if (insn instanceof FieldInsnNode fi) {
-                return fi.getOpcode() == Opcodes.GETSTATIC || fi.getOpcode() == Opcodes.GETFIELD;
+                return fi.getOpcode() == Opcodes.GETSTATIC;
             }
+            return false;
+        }
+
+        /**
+         * True for a single instruction that pushes the int index and consumes
+         * nothing — safe to clone in isolation after rawData(). Covers ILOAD
+         * and the int-constant pushes (ICONST_*, BIPUSH, SIPUSH, and an LDC of
+         * an Integer). A composite index expression (e.g. a field load or
+         * arithmetic) is declined because cloning only the last instruction
+         * would drop the operands it depends on.
+         */
+        private static boolean isSelfContainedIndex(AbstractInsnNode insn) {
+            int op = insn.getOpcode();
+            if (op == Opcodes.ILOAD) return true;
+            if (op >= Opcodes.ICONST_M1 && op <= Opcodes.ICONST_5) return true;
+            if (op == Opcodes.BIPUSH || op == Opcodes.SIPUSH) return true;
+            if (op == Opcodes.LDC && insn instanceof LdcInsnNode ldc
+                    && ldc.cst instanceof Integer) return true;
             return false;
         }
 

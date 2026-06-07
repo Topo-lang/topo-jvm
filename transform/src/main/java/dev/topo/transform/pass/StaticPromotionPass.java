@@ -94,6 +94,13 @@ public class StaticPromotionPass implements BasePass {
             if ((mn.access & Opcodes.ACC_NATIVE) != 0) continue;
             if ("<init>".equals(mn.name) || "<clinit>".equals(mn.name)) continue;
 
+            // NOTE: cross-class callers of a non-private promoted method live
+            // in other class files this per-class pass never sees, so their
+            // call sites keep the old descriptor (finding 14 — requires a
+            // whole-batch two-phase rewrite to fix soundly and is tracked
+            // separately). Same-class call sites — including the private-helper
+            // INVOKESPECIAL case (finding 15) — are rewritten in Step 3 below.
+
             String origDesc = mn.desc;
             String newDesc = "(L" + cn.name + ";" + origDesc.substring(1);
             descMap.put(mn.name + origDesc, newDesc);
@@ -115,11 +122,22 @@ public class StaticPromotionPass implements BasePass {
             }
         }
 
-        // Step 3: Rewrite call sites in ALL methods
+        // Step 3: Rewrite same-class call sites in ALL methods. A promoted
+        // (private) instance method is invoked from within its own class via
+        // INVOKESPECIAL (the classic private-method dispatch) or, under
+        // nestmate access, INVOKEVIRTUAL — both must be retargeted to
+        // INVOKESTATIC with the extended descriptor. The receiver already sits
+        // on the stack where the extended descriptor's first parameter expects
+        // it, so the conversion is a straight opcode + descriptor swap. Sites
+        // that kept the old descriptor would link-fail (IncompatibleClassChangeError).
         for (MethodNode mn : cn.methods) {
             for (AbstractInsnNode insn : mn.instructions) {
                 if (insn instanceof MethodInsnNode call) {
-                    if (call.getOpcode() == Opcodes.INVOKEVIRTUAL && call.owner.equals(cn.name)) {
+                    boolean sameClassInstanceCall =
+                        (call.getOpcode() == Opcodes.INVOKEVIRTUAL
+                            || call.getOpcode() == Opcodes.INVOKESPECIAL)
+                        && call.owner.equals(cn.name);
+                    if (sameClassInstanceCall) {
                         String lookupKey = call.name + call.desc;
                         String newDesc = descMap.get(lookupKey);
                         if (newDesc != null) {

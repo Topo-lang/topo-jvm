@@ -319,6 +319,157 @@ class LoopVectorizePassTest {
             "Namespace-level match should trigger vectorization");
     }
 
+    /**
+     * Generate a single-source scalar-op loop:
+     * <pre>
+     * static void scale(float[] a, float[] b, float s, int n) {
+     *     for (int i = 0; i < n; i++) a[i] = b[i] * s;
+     * }
+     * </pre>
+     * The vectorizer's array-op codegen only implements the two-source / one-op
+     * shape (a[i] = b[i] op c[i]); a single source with a scalar op would have
+     * its arithmetic dropped, so the pass must decline and leave the scalar loop.
+     */
+    private byte[] generateScalarOpClass() {
+        ClassWriter cw = new ClassWriter(0);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Compute", null,
+                "java/lang/Object", null);
+
+        var init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitCode();
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(1, 1);
+        init.visitEnd();
+
+        // static void scale(float[] a, float[] b, float s, int n)
+        // locals: 0=a, 1=b, 2=s, 3=n, 4=i
+        var mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "scale",
+                "([F[FFI)V", null, null);
+        mv.visitCode();
+        mv.visitInsn(Opcodes.ICONST_0);
+        mv.visitVarInsn(Opcodes.ISTORE, 4);
+
+        var loopHead = new Label();
+        var loopExit = new Label();
+        mv.visitLabel(loopHead);
+        mv.visitVarInsn(Opcodes.ILOAD, 4);
+        mv.visitVarInsn(Opcodes.ILOAD, 3);
+        mv.visitJumpInsn(Opcodes.IF_ICMPGE, loopExit);
+
+        // a[i] = b[i] * s
+        mv.visitVarInsn(Opcodes.ALOAD, 0); // a
+        mv.visitVarInsn(Opcodes.ILOAD, 4); // i
+        mv.visitVarInsn(Opcodes.ALOAD, 1); // b
+        mv.visitVarInsn(Opcodes.ILOAD, 4); // i
+        mv.visitInsn(Opcodes.FALOAD);       // b[i]
+        mv.visitVarInsn(Opcodes.FLOAD, 2); // s
+        mv.visitInsn(Opcodes.FMUL);         // b[i] * s
+        mv.visitInsn(Opcodes.FASTORE);
+
+        mv.visitIincInsn(4, 1);
+        mv.visitJumpInsn(Opcodes.GOTO, loopHead);
+        mv.visitLabel(loopExit);
+        mv.visitInsn(Opcodes.RETURN);
+        mv.visitMaxs(6, 5);
+        mv.visitEnd();
+
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    /**
+     * Generate a product reduction:
+     * <pre>
+     * static float product(float[] a, float prod, int n) {
+     *     for (int i = 0; i < n; i++) prod = prod * a[i];
+     *     return prod;
+     * }
+     * </pre>
+     * The reduction codegen seeds with FloatVector.zero and reduces with ADD —
+     * correct only for FADD. A product (FMUL) reduction must decline rather than
+     * multiply into an all-zero vector and reduce with ADD (which returns 0).
+     */
+    private byte[] generateProductReductionClass() {
+        ClassWriter cw = new ClassWriter(0);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Compute", null,
+                "java/lang/Object", null);
+
+        var init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitCode();
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(1, 1);
+        init.visitEnd();
+
+        // static float product(float[] a, float prod, int n)
+        // locals: 0=a, 1=prod, 2=n, 3=i
+        var mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "product",
+                "([FFI)F", null, null);
+        mv.visitCode();
+        mv.visitInsn(Opcodes.ICONST_0);
+        mv.visitVarInsn(Opcodes.ISTORE, 3);
+
+        var loopHead = new Label();
+        var loopExit = new Label();
+        mv.visitLabel(loopHead);
+        mv.visitVarInsn(Opcodes.ILOAD, 3);
+        mv.visitVarInsn(Opcodes.ILOAD, 2);
+        mv.visitJumpInsn(Opcodes.IF_ICMPGE, loopExit);
+
+        // prod = prod * a[i]
+        mv.visitVarInsn(Opcodes.FLOAD, 1); // prod
+        mv.visitVarInsn(Opcodes.ALOAD, 0); // a
+        mv.visitVarInsn(Opcodes.ILOAD, 3); // i
+        mv.visitInsn(Opcodes.FALOAD);       // a[i]
+        mv.visitInsn(Opcodes.FMUL);         // prod * a[i]
+        mv.visitVarInsn(Opcodes.FSTORE, 1); // prod = ...
+
+        mv.visitIincInsn(3, 1);
+        mv.visitJumpInsn(Opcodes.GOTO, loopHead);
+        mv.visitLabel(loopExit);
+        mv.visitVarInsn(Opcodes.FLOAD, 1);
+        mv.visitInsn(Opcodes.FRETURN);
+        mv.visitMaxs(4, 4);
+        mv.visitEnd();
+
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    @Test
+    void singleSourceScalarOpNotVectorized() {
+        // a[i] = b[i] * s — single source array + scalar op. The array-op
+        // codegen only handles two-source/one-op, so this must be left as the
+        // scalar loop (dropping the scalar multiply would be a miscompile).
+        byte[] input = generateScalarOpClass();
+        var metadata = buildParallelStageMetadata(
+            "app::Compute::scale", "app::Compute::otherTask");
+
+        byte[] output = applyPass(input, defaultConfig(), metadata);
+
+        assertFalse(hasVectorApiCall(output, "scale"),
+            "Single-source scalar-op loop must NOT be vectorized (scalar op "
+            + "would be dropped)");
+    }
+
+    @Test
+    void productReductionNotVectorized() {
+        // prod *= a[i] — product reduction. The reducer is hardcoded to ADD
+        // with a zero-seeded accumulator, which would return 0; must decline.
+        byte[] input = generateProductReductionClass();
+        var metadata = buildParallelStageMetadata(
+            "app::Compute::product", "app::Compute::otherTask");
+
+        byte[] output = applyPass(input, defaultConfig(), metadata);
+
+        assertFalse(hasVectorApiCall(output, "product"),
+            "Non-ADD (product) reduction must NOT be vectorized — the ADD "
+            + "reducer over a zero accumulator returns 0");
+    }
+
     @Test
     void orchestratorIncluded() {
         byte[] input = generateArrayAddClass();

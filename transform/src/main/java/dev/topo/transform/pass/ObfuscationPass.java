@@ -161,24 +161,15 @@ public class ObfuscationPass implements BasePass {
      */
     MethodKey resolveDeclaringOwner(MethodKey leaf) {
         if (hierarchy == null) return leaf;
-        // The leaf itself must be in the overridable set — if the user
-        // class declares this method as private or static the JVM
-        // dispatches statically and the override chain does not apply.
-        if (!hierarchy.declaresOverridable(leaf)) return leaf;
-
-        MethodKey current = leaf;
-        // Bound walk-up so a pathological hierarchy can never wedge the
-        // pass. JVM class depth is well under 100 in practice; pick a
-        // generous cap. java/lang/Object terminates by returning null
-        // from superOf().
-        for (int depth = 0; depth < 256; depth++) {
-            String parent = hierarchy.superOf(current.owner());
-            if (parent == null) break;
-            MethodKey parentKey = MethodKey.of(parent, current.name(), current.descriptor());
-            if (!hierarchy.declaresOverridable(parentKey)) break;
-            current = parentKey;
-        }
-        return current;
+        // Delegate to the hierarchy snapshot, which resolves the canonical
+        // declaring owner over BOTH the superclass chain and interface edges.
+        // The earlier superclass-only walk-up here ignored the interfaces[]
+        // array, so an interface-declared method and its implementation
+        // hashed to different names — an AbstractMethodError on
+        // invokeinterface. canonicalDeclaringOwner() returns `leaf` unchanged
+        // for non-overridable (private/static/constructor) methods, preserving
+        // the literal-owner hash they require.
+        return hierarchy.canonicalDeclaringOwner(leaf);
     }
 
     /**

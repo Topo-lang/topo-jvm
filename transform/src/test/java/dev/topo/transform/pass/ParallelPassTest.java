@@ -113,6 +113,59 @@ class ParallelPassTest {
         assertEquals(0, awaitCount);
     }
 
+    /**
+     * An orchestrator may mix a parallel stage (2+ functions in one stage)
+     * with sequential stage-0 setup calls. Only the parallel-stage callees may
+     * be hoisted into Parallel.spawn(); a sequential setup call (alone in its
+     * stage) must keep its original ordering, otherwise the spawn races the
+     * code that depends on it.
+     */
+    @Test
+    void sequentialStageCallNotWrapped() {
+        String className = "app/Main";
+        String methodName = "run";
+
+        // Bytecode: run() calls setup(), taskA(), taskB() — all void static.
+        byte[] original = generateClassWithStaticCalls(className, methodName,
+                new String[]{"setup", "taskA", "taskB"});
+
+        // Metadata: setup is stage 0 (alone, sequential); taskA+taskB are
+        // stage 1 (parallel). Orchestrator is run().
+        String namespace = className.replace("/", "::");
+        String blockQName = namespace + "::" + methodName;
+        JsonObject metadata = new JsonObject();
+        JsonObject logicBlocks = new JsonObject();
+        JsonObject block = new JsonObject();
+        block.addProperty("qualifiedName", blockQName);
+        block.addProperty("simpleName", methodName);
+        JsonArray calledFunctions = new JsonArray();
+        JsonArray stages = new JsonArray();
+        calledFunctions.add("setup"); stages.add(0);
+        calledFunctions.add("taskA"); stages.add(1);
+        calledFunctions.add("taskB"); stages.add(1);
+        block.add("calledFunctions", calledFunctions);
+        block.add("stages", stages);
+        block.addProperty("isPipeline", false);
+        block.add("edges", new JsonArray());
+        logicBlocks.add(blockQName, block);
+        metadata.add("logicBlocks", logicBlocks);
+
+        byte[] transformed = applyPass(original, metadata);
+        ClassNode cn = toClassNode(transformed);
+        MethodNode mn = findMethod(cn, methodName);
+        assertNotNull(mn);
+
+        // Only the two parallel-stage calls become INVOKEDYNAMIC.
+        assertEquals(2, countOpcodes(mn, INVOKEDYNAMIC),
+                "Only the two parallel-stage calls should be wrapped");
+        // setup() keeps its direct sequential INVOKESTATIC.
+        assertEquals(1, countMethodInsn(mn, INVOKESTATIC, className, "setup"),
+                "Sequential stage-0 setup() must NOT be hoisted into spawn()");
+        // taskA/taskB direct calls are gone (replaced by spawn).
+        assertEquals(0, countMethodInsn(mn, INVOKESTATIC, className, "taskA"));
+        assertEquals(0, countMethodInsn(mn, INVOKESTATIC, className, "taskB"));
+    }
+
     @Test
     void nonVoidCallsPreserved() {
         String className = "app/Calc";

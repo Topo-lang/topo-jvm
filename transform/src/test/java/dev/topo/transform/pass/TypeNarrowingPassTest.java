@@ -149,6 +149,46 @@ class TypeNarrowingPassTest {
         return cw.toByteArray();
     }
 
+    /**
+     * Generate: {@code (Particle) array.get(this.idx)} — a field-backed index.
+     * Bytecode: ALOAD 1 (array); ALOAD 0; GETFIELD idx; INVOKEVIRTUAL get; CHECKCAST.
+     * The instruction immediately before get() is GETFIELD (not a self-contained
+     * index), and the one before that is ALOAD this (not the real array). The
+     * pass must decline rather than emit rawData() on `this` and orphan the
+     * array load.
+     */
+    private byte[] generateArrayGetWithFieldIndex() {
+        ClassWriter cw = new ClassWriter(0);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Processor", null,
+                "java/lang/Object", null);
+        cw.visitField(Opcodes.ACC_PRIVATE, "idx", "I", null, null).visitEnd();
+
+        var init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitCode();
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(1, 1);
+        init.visitEnd();
+
+        // public Object process(Array array)  — index comes from this.idx
+        var mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "process",
+                "(Ldev/topo/Array;)Ljava/lang/Object;", null, null);
+        mv.visitCode();
+        mv.visitVarInsn(Opcodes.ALOAD, 1);   // array
+        mv.visitVarInsn(Opcodes.ALOAD, 0);   // this
+        mv.visitFieldInsn(Opcodes.GETFIELD, "app/Processor", "idx", "I"); // this.idx
+        mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "dev/topo/Array", "get",
+                "(I)Ljava/lang/Object;", false);
+        mv.visitTypeInsn(Opcodes.CHECKCAST, "app/Particle");
+        mv.visitInsn(Opcodes.ARETURN);
+        mv.visitMaxs(3, 2);
+        mv.visitEnd();
+
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
     // =========================================================================
     // Verification helpers
     // =========================================================================
@@ -325,6 +365,24 @@ class TypeNarrowingPassTest {
             "rawData() should not be present when pattern does not match");
         assertFalse(hasAALOAD(output, "process"),
             "AALOAD should not be present when pattern does not match");
+    }
+
+    @Test
+    void testFieldBackedIndexNotTransformed() {
+        // array.get(this.idx): the index is a composite (ALOAD this; GETFIELD)
+        // so the single-instruction clone heuristic cannot reproduce it, and
+        // the real array ref is two slots back. The pass must decline.
+        byte[] input = generateArrayGetWithFieldIndex();
+
+        byte[] output = applyPass(input, configWithMode("force"), new JsonObject());
+
+        assertEquals(1, countArrayGetCalls(output, "process"),
+            "Array.get() with a field-backed index must be preserved (cannot "
+            + "be narrowed safely)");
+        assertFalse(hasRawDataCall(output, "process"),
+            "rawData() must not be emitted for a field-backed index");
+        assertFalse(hasAALOAD(output, "process"),
+            "AALOAD must not be emitted for a field-backed index");
     }
 
     @Test
