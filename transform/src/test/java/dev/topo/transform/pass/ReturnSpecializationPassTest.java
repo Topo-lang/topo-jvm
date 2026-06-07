@@ -365,4 +365,112 @@ class ReturnSpecializationPassTest {
         assertEquals(1, countPutField(output, "compute", "sum"));
         assertEquals(1, countPutField(output, "compute", "debugInfo"));
     }
+
+    // =========================================================================
+    // Regression: PUTFIELD must be keyed on (owner, name), not name alone, so
+    // an unrelated object's same-named field write is NOT dropped along with
+    // the dead return-struct field (issue jvm-transform-pass-miscompiles #21).
+    // =========================================================================
+
+    /**
+     * compute() writes BOTH app/ComputeResult.debugInfo (the return struct's
+     * dead field) AND an unrelated app/Logger.debugInfo before returning the
+     * ComputeResult. Only the return-struct write is a dead-field candidate.
+     */
+    private byte[] generateServiceClassWithUnrelatedSameNamedField() {
+        ClassWriter cw = new ClassWriter(0);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Service", null,
+                "java/lang/Object", null);
+
+        var init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitCode();
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(1, 1);
+        init.visitEnd();
+
+        var mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "compute", "()Lapp/ComputeResult;", null, null);
+        mv.visitCode();
+
+        // ComputeResult result = new ComputeResult();
+        mv.visitTypeInsn(Opcodes.NEW, "app/ComputeResult");
+        mv.visitInsn(Opcodes.DUP);
+        mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "app/ComputeResult", "<init>", "()V", false);
+        mv.visitVarInsn(Opcodes.ASTORE, 1);
+
+        // Logger logger = new Logger();
+        mv.visitTypeInsn(Opcodes.NEW, "app/Logger");
+        mv.visitInsn(Opcodes.DUP);
+        mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "app/Logger", "<init>", "()V", false);
+        mv.visitVarInsn(Opcodes.ASTORE, 2);
+
+        // result.sum = 42 (live)
+        mv.visitVarInsn(Opcodes.ALOAD, 1);
+        mv.visitIntInsn(Opcodes.BIPUSH, 42);
+        mv.visitFieldInsn(Opcodes.PUTFIELD, "app/ComputeResult", "sum", "I");
+
+        // result.debugInfo = "debug" (dead — return struct field)
+        mv.visitVarInsn(Opcodes.ALOAD, 1);
+        mv.visitLdcInsn("debug");
+        mv.visitFieldInsn(Opcodes.PUTFIELD, "app/ComputeResult", "debugInfo", "Ljava/lang/String;");
+
+        // logger.debugInfo = "log" (unrelated owner — MUST be preserved)
+        mv.visitVarInsn(Opcodes.ALOAD, 2);
+        mv.visitLdcInsn("log");
+        mv.visitFieldInsn(Opcodes.PUTFIELD, "app/Logger", "debugInfo", "Ljava/lang/String;");
+
+        mv.visitVarInsn(Opcodes.ALOAD, 1);
+        mv.visitInsn(Opcodes.ARETURN);
+        mv.visitMaxs(3, 3);
+        mv.visitEnd();
+
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    /** Count PUTFIELD instructions for a specific (owner, name) in a method. */
+    private int countPutFieldOwned(byte[] classBytes, String methodName,
+                                   String owner, String fieldName) {
+        ClassReader reader = new ClassReader(classBytes);
+        ClassNode cn = new ClassNode();
+        reader.accept(cn, 0);
+        for (MethodNode mn : cn.methods) {
+            if (!mn.name.equals(methodName)) continue;
+            int count = 0;
+            for (AbstractInsnNode insn : mn.instructions) {
+                if (insn instanceof FieldInsnNode fin
+                        && fin.getOpcode() == Opcodes.PUTFIELD
+                        && fin.owner.equals(owner)
+                        && fin.name.equals(fieldName)) {
+                    count++;
+                }
+            }
+            return count;
+        }
+        return -1;
+    }
+
+    @Test
+    void unrelatedSameNamedFieldPreserved() {
+        byte[] input = generateServiceClassWithUnrelatedSameNamedField();
+        var metadata = buildMetadata(
+            new String[]{"sum", "debugInfo"},
+            new String[]{"sum"}      // debugInfo is dead on app::Service::compute
+        );
+
+        byte[] output = applyPass(input, defaultConfig(), metadata);
+
+        // Return-struct dead field eliminated...
+        assertEquals(0, countPutFieldOwned(output, "compute",
+                "app/ComputeResult", "debugInfo"),
+            "dead return-struct debugInfo PUTFIELD should be eliminated");
+        // ...but the live struct field and the unrelated Logger.debugInfo stay.
+        assertEquals(1, countPutFieldOwned(output, "compute",
+                "app/ComputeResult", "sum"),
+            "live return-struct field should be preserved");
+        assertEquals(1, countPutFieldOwned(output, "compute",
+                "app/Logger", "debugInfo"),
+            "unrelated object's same-named field write must NOT be dropped");
+    }
 }

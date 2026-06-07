@@ -1,6 +1,7 @@
 package dev.topo.transform;
 
 import com.google.gson.*;
+import dev.topo.transform.pass.BasePass;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.*;
@@ -114,5 +115,55 @@ class PassPipelineTest {
         pipeline.run(inputDir, outputDir);
 
         assertTrue(Files.exists(outputDir), "output directory should be created");
+    }
+
+    // =========================================================================
+    // Regression: a single pass throwing on one class must be isolated — the
+    // (class, pass) is skipped and the rest of the batch still processes
+    // (issue jvm-transform-pass-miscompiles #26).
+    // =========================================================================
+
+    /** A pass whose visitor construction always throws. */
+    private static final class ThrowingPass implements BasePass {
+        @Override
+        public ClassVisitor createVisitor(ClassWriter writer) {
+            throw new IllegalStateException("simulated pass failure");
+        }
+    }
+
+    @Test
+    void throwingPassIsCaughtAndInputReturnedUnchanged() {
+        // applyPass is package-private precisely so this isolation contract is
+        // directly testable: a throwing pass must be caught, and the original
+        // bytes returned unchanged, so the batch can continue.
+        byte[] cls = generateClass("app/Service", "helper", Opcodes.ACC_PUBLIC);
+        var pipeline = new PassPipeline(new JsonObject(), new JsonObject());
+
+        byte[] result = assertDoesNotThrow(
+            () -> pipeline.applyPass(cls, new ThrowingPass()),
+            "a throwing pass must be caught, not propagate out of applyPass");
+        assertArrayEquals(cls, result,
+            "a failing (class, pass) must leave the input bytes unchanged");
+    }
+
+    @Test
+    void batchContinuesAcrossMultipleClasses(@TempDir Path tempDir) throws IOException {
+        // End-to-end: two classes both produce output even though the per-class
+        // rewrite is wrapped — no class is dropped partway through the batch.
+        Path inputDir = tempDir.resolve("input");
+        Files.createDirectories(inputDir.resolve("app"));
+        Files.write(inputDir.resolve("app/A.class"),
+            generateClass("app/A", "run", Opcodes.ACC_PUBLIC));
+        Files.write(inputDir.resolve("app/B.class"),
+            generateClass("app/B", "run", Opcodes.ACC_PUBLIC));
+
+        Path outputDir = tempDir.resolve("output");
+        var pipeline = new PassPipeline(new JsonObject(), new JsonObject());
+        pipeline.run(inputDir, outputDir);
+
+        assertTrue(Files.exists(outputDir.resolve("app/A.class")),
+            "first class should be written");
+        assertTrue(Files.exists(outputDir.resolve("app/B.class")),
+            "second class should be written");
     }
 }

@@ -32,6 +32,12 @@ public class PostTransformVerifier {
     public PostTransformResult verify(Path classDir) throws IOException {
         PostTransformResult result = new PostTransformResult();
 
+        // Guard a missing/stale --classes directory: walkFileTree would throw
+        // NoSuchFileException out of the --post-verify CLI path. A missing dir
+        // has nothing to verify, so return a clean (empty) result, matching
+        // BytecodeVerifier.loadClassNodesTracked's exists-guard.
+        if (!Files.exists(classDir)) return result;
+
         // Collect all .class files
         List<Path> classFiles = new ArrayList<>();
         Files.walkFileTree(classDir, new SimpleFileVisitor<>() {

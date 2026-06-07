@@ -484,7 +484,15 @@ public class BytecodeVerifier {
                                                 BytecodeSymbolMapper mapper) {
         // Find parallel stages: for each logic block, group functions by stage.
         // Stages with 2+ functions are parallelizable.
-        var stageGroups = new HashMap<Integer, List<String>>();
+        //
+        // Each parallel group is scoped to its own (block, stage): we collect a
+        // FLAT LIST of groups and never merge across blocks. Keying the merge on
+        // the bare integer stage number would pool two unrelated blocks that
+        // each happen to have a "stage 1", so a same-named field written in
+        // different blocks (each by its own single method) would be reported as
+        // a cross-block race. Per-(block, stage) isolation keeps the pairwise
+        // write check confined to functions that genuinely run together.
+        var parallelGroups = new ArrayList<List<String>>();
 
         for (var blockEntry : logicBlocksObj.entrySet()) {
             var block = blockEntry.getValue().getAsJsonObject();
@@ -503,11 +511,11 @@ public class BytecodeVerifier {
                 int stage = stages.get(i).getAsInt();
                 blockStageGroups.computeIfAbsent(stage, k -> new ArrayList<>()).add(qualifiedCallee);
             }
-            // Merge into overall groups (only stages with 2+ functions)
-            for (var group : blockStageGroups.entrySet()) {
-                if (group.getValue().size() >= 2) {
-                    stageGroups.computeIfAbsent(group.getKey(), k -> new ArrayList<>())
-                        .addAll(group.getValue());
+            // Keep each (block, stage) group separate; only stages with 2+
+            // functions are parallelizable candidates.
+            for (var group : blockStageGroups.values()) {
+                if (group.size() >= 2) {
+                    parallelGroups.add(group);
                 }
             }
         }
@@ -515,7 +523,7 @@ public class BytecodeVerifier {
         // For each parallel stage group, check for shared mutable state.
         // Methods declared without a descriptor expand to every overload;
         // scan each overload independently for field writes.
-        for (var group : stageGroups.values()) {
+        for (var group : parallelGroups) {
             if (group.size() < 2) continue;
 
             // Record, per field, the set of distinct methods that write it.

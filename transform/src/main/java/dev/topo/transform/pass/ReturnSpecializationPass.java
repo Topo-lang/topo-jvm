@@ -230,14 +230,32 @@ public class ReturnSpecializationPass implements BasePass {
             accept(downstream);
         }
 
+        /** Internal name of the multi-return struct this method produces, or
+         *  null if the return type is not an object (then nothing to elide).
+         *  Dead fields belong to this struct, so a PUTFIELD on any other owner
+         *  is an unrelated write and must NOT be matched on name alone. */
+        private String returnStructOwner() {
+            Type ret = Type.getReturnType(desc);
+            return ret.getSort() == Type.OBJECT ? ret.getInternalName() : null;
+        }
+
         private void eliminateDeadFields() {
             // Record only fields actually rewritten — the dead set is the
             // *declarable* dead set; until we see a real PUTFIELD on this
             // method body, no transformation occurred.
+            String structOwner = returnStructOwner();
+            if (structOwner == null) return; // non-object return: no struct to specialize
             Set<String> rewritten = null;
             for (AbstractInsnNode insn : instructions.toArray()) {
                 if (insn instanceof FieldInsnNode field) {
-                    if (field.getOpcode() == Opcodes.PUTFIELD && deadFields.contains(field.name)) {
+                    // Key the match on (owner, name): only PUTFIELDs into the
+                    // return struct itself are dead-field candidates. Matching
+                    // on field.name alone would also drop an unrelated object's
+                    // same-named field write (e.g. app/Logger.debugInfo when the
+                    // dead field is app/ComputeResult.debugInfo).
+                    if (field.getOpcode() == Opcodes.PUTFIELD
+                            && field.owner.equals(structOwner)
+                            && deadFields.contains(field.name)) {
                         InsnList replacement = new InsnList();
                         if (isCategory2(field.desc)) {
                             replacement.add(new InsnNode(Opcodes.POP2)); // pop category-2 value

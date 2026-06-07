@@ -217,11 +217,20 @@ if(TOPO_JVM_BUILD_DECOMPILE)
 endif()
 
 # ── Install / export ────────────────────────────────────
-install(EXPORT topo-jvmTargets
-    FILE topo-jvmTargets.cmake
-    NAMESPACE topo::jvm::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/topo-jvm
-)
+# The topo-jvmTargets export set is POPULATED only by the
+# install(TARGETS topo-build-jvm-java EXPORT topo-jvmTargets) rule in
+# tools/topo-build-jvm-java/CMakeLists.txt, which is reached only inside the
+# TOPO_JVM_BUILD_TOOLS branch above. Guard install(EXPORT) with the SAME
+# condition so disabling the JVM tools (e.g. a scoped LLVM-only ci-full build)
+# cleanly omits both the targets and their export instead of leaving a dangling
+# `INSTALL(EXPORT) given unknown export "topo-jvmTargets"` generate failure.
+if(TOPO_JVM_BUILD_TOOLS)
+    install(EXPORT topo-jvmTargets
+        FILE topo-jvmTargets.cmake
+        NAMESPACE topo::jvm::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/topo-jvm
+    )
+endif()
 
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/topo-jvmConfig.cmake.in

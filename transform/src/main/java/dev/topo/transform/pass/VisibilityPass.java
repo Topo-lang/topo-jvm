@@ -91,9 +91,13 @@ public class VisibilityPass implements BasePass {
 
         for (var entry : metadata.getAsJsonObject("functions").entrySet()) {
             var fn = entry.getValue().getAsJsonObject();
+            // A metadata entry may lack qualifiedName; skip rather than NPE.
+            if (!fn.has("qualifiedName")) continue;
             String name = fn.get("qualifiedName").getAsString();
             if (!name.equals(classQ) && (nsQ == null || !name.equals(nsQ))) continue;
-            return fn.get("visibility").getAsString();
+            // Guard visibility absence: a visibility-less entry defaults to
+            // "public" (the shape other readers assume), not an NPE.
+            return fn.has("visibility") ? fn.get("visibility").getAsString() : "public";
         }
         return null;
     }

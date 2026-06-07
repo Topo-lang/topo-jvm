@@ -185,6 +185,84 @@ class ObservabilityPassTest {
     }
 
     /**
+     * Generate a class whose target method body throws (NEW/DUP/INVOKESPECIAL/
+     * ATHROW) instead of returning, so we can confirm the instrumented event
+     * is still closed on the exceptional path.
+     */
+    private static byte[] generateThrowingClass(String className, String methodName) {
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, className, null,
+                "java/lang/Object", null);
+
+        MethodVisitor init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitCode();
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(1, 1);
+        init.visitEnd();
+
+        MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, methodName, "()V", null, null);
+        mv.visitCode();
+        mv.visitTypeInsn(Opcodes.NEW, "java/lang/RuntimeException");
+        mv.visitInsn(Opcodes.DUP);
+        mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/RuntimeException",
+                "<init>", "()V", false);
+        mv.visitInsn(Opcodes.ATHROW);
+        mv.visitMaxs(2, 1);
+        mv.visitEnd();
+
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    @Test
+    void exceptionalExitCoveredByFinally() {
+        // Regression (issue jvm-transform-pass-miscompiles #22): the event was
+        // closed only before normal returns, leaking an open JFR event on an
+        // ATHROW exit. The pass must now wrap the body in try-finally so a
+        // catch-all handler re-closes the event before rethrowing.
+        String className = "app/Main";
+        String methodName = "init";
+        byte[] input = generateThrowingClass(className, methodName);
+        JsonObject metadata = buildMetadata("app::Main::init", 1);
+
+        byte[] output = applyPass(input, new JsonObject(), metadata);
+        ClassNode cn = new ClassNode();
+        new ClassReader(output).accept(cn, 0);
+        MethodNode mn = null;
+        for (MethodNode m : cn.methods) {
+            if (m.name.equals(methodName)) mn = m;
+        }
+        assertNotNull(mn, "Method should exist in transformed class");
+
+        // A finally handler is an exception handler with a null type covering
+        // the instrumented body.
+        assertNotNull(mn.tryCatchBlocks, "try-catch blocks list should exist");
+        boolean hasFinally = mn.tryCatchBlocks.stream().anyMatch(tcb -> tcb.type == null);
+        assertTrue(hasFinally,
+                "instrumented method must declare a catch-all (finally) handler");
+
+        // endStage must be reachable on the exceptional path: it appears before
+        // the rethrowing ATHROW in the handler.
+        boolean endStageBeforeAthrow = false;
+        MethodInsnNode lastEndStage = null;
+        for (AbstractInsnNode insn : mn.instructions) {
+            if (insn instanceof MethodInsnNode min
+                    && min.getOpcode() == Opcodes.INVOKESTATIC
+                    && "dev/topo/Observe".equals(min.owner)
+                    && "endStage".equals(min.name)) {
+                lastEndStage = min;
+            }
+            if (insn.getOpcode() == Opcodes.ATHROW && lastEndStage != null) {
+                endStageBeforeAthrow = true;
+            }
+        }
+        assertTrue(endStageBeforeAthrow,
+                "endStage must run before the rethrowing ATHROW (exceptional close)");
+    }
+
+    /**
      * Extract the integer constant from an instruction node, or return Integer.MIN_VALUE
      * if the node is not a recognized int-push instruction.
      */

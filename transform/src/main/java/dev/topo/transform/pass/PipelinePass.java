@@ -154,10 +154,13 @@ public class PipelinePass implements BasePass {
         for (MethodNode mn : cn.methods) {
             PipelineSpec spec = findSpec(cn.name, mn.name);
             if (spec == null) continue;
-            // Only int-returning orchestrators are supported today; the
-            // benchmark uses that shape and nothing else in the suite
-            // declares a pipeline with a different terminal type.
-            if (!descriptorReturnsInt(mn.desc)) continue;
+            // Only the exact (int)int orchestrator shape is supported today.
+            // The rewrite below does a single ILOAD of one int parameter slot
+            // (emitSourceFuture) and an IRETURN; a multi-int (II)I method would
+            // silently drop arg 1, and a (Ljava/lang/String;)I method would
+            // ILOAD a reference slot → invalid/garbage bytecode. Gate on the
+            // full signature (params AND return), not just the )I suffix.
+            if (!descriptorIsSingleIntToInt(mn.desc)) continue;
 
             rewriteOrchestrator(cn, mn, spec, bridges);
             String hostMethod = cn.name.replace("/", "::") + "::" + mn.name;
@@ -170,9 +173,16 @@ public class PipelinePass implements BasePass {
         }
     }
 
-    private static boolean descriptorReturnsInt(String desc) {
-        // e.g. (I)I  or  (II)I
-        return desc.endsWith(")I");
+    private static boolean descriptorIsSingleIntToInt(String desc) {
+        // Exactly (I)I — one primitive int parameter, int return. The
+        // orchestrator codegen reads a single int slot and emits IRETURN, so
+        // anything wider (II)I / (III)I or a non-int param (Ljava/lang/String;)I
+        // would miscompile; only this shape is safe to lower.
+        Type mt = Type.getMethodType(desc);
+        Type[] args = mt.getArgumentTypes();
+        return args.length == 1
+                && args[0].getSort() == Type.INT
+                && mt.getReturnType().getSort() == Type.INT;
     }
 
     /**

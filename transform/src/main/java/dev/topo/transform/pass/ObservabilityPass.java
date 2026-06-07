@@ -83,6 +83,12 @@ public class ObservabilityPass implements BasePass {
         private final String methodName;
         private final int stageOrder;
         private int eventLocal;
+        // try-finally scaffold so endStage() runs on exceptional (ATHROW)
+        // exit too, not only normal returns — mirrors ArenaPass. Without it an
+        // exception leaves the JFR StageEvent open and begin/end unbalanced.
+        private Label tryStart;
+        private Label tryEnd;
+        private Label finallyHandler;
 
         ObservabilityMethodAdapter(int api, int access, String descriptor,
                                    MethodVisitor mv, String className,
@@ -99,6 +105,9 @@ public class ObservabilityPass implements BasePass {
             super.visitCode();
 
             String stageName = className.replace("/", "::") + "::" + methodName;
+            tryStart = new Label();
+            tryEnd = new Label();
+            finallyHandler = new Label();
 
             // NEW StageEvent -> DUP -> <init> -> DUP -> set stageName -> DUP -> set stageOrder -> DUP -> begin() -> ASTORE
             mv.visitTypeInsn(Opcodes.NEW, "dev/topo/Observe$StageEvent");
@@ -125,16 +134,39 @@ public class ObservabilityPass implements BasePass {
 
             // Store the remaining reference
             mv.visitVarInsn(Opcodes.ASTORE, eventLocal);
+
+            // Open the protected region; the finally handler in visitMaxs closes
+            // the event on any exceptional exit.
+            mv.visitLabel(tryStart);
+        }
+
+        /** Emit Observe.endStage(eventLocal) — the span/event close. */
+        private void emitEndStage() {
+            mv.visitVarInsn(Opcodes.ALOAD, eventLocal);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "dev/topo/Observe",
+                    "endStage", "(Ldev/topo/Observe$StageEvent;)V", false);
         }
 
         @Override
         public void visitInsn(int opcode) {
             if (opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN) {
-                mv.visitVarInsn(Opcodes.ALOAD, eventLocal);
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "dev/topo/Observe",
-                        "endStage", "(Ldev/topo/Observe$StageEvent;)V", false);
+                emitEndStage();
             }
             super.visitInsn(opcode);
+        }
+
+        @Override
+        public void visitMaxs(int maxStack, int maxLocals) {
+            // finally handler: close the event then rethrow, covering ATHROW /
+            // exceptional exits the per-return close in visitInsn cannot reach.
+            mv.visitLabel(tryEnd);
+            mv.visitLabel(finallyHandler);
+            emitEndStage();
+            mv.visitInsn(Opcodes.ATHROW);
+
+            mv.visitTryCatchBlock(tryStart, tryEnd, finallyHandler, null);
+
+            super.visitMaxs(maxStack, maxLocals);
         }
 
         /**

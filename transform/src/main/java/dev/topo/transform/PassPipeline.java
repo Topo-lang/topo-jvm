@@ -704,15 +704,42 @@ public class PassPipeline {
         return current;
     }
 
-    private byte[] applyPass(byte[] input, BasePass pass) {
-        ClassReader reader = new ClassReader(input);
-        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
-        ClassVisitor visitor = pass.createVisitor(writer);
-        // EXPAND_FRAMES is required by LocalVariablesSorter (used by ArenaPass and
-        // other adapters that allocate locals mid-method). COMPUTE_FRAMES below
-        // recompresses frames on output, so there is no size penalty.
-        reader.accept(visitor, ClassReader.EXPAND_FRAMES);
-        return writer.toByteArray();
+    // Package-private (not private) so the isolation contract — a throwing
+    // pass is caught, logged, and the input returned unchanged — is unit
+    // testable directly with a throwing BasePass stub.
+    byte[] applyPass(byte[] input, BasePass pass) {
+        // Per-(class, pass) isolation: a single pass throwing on one malformed
+        // class must NOT abort the whole batch. Catch, log the (class, pass),
+        // and return the input bytes unchanged so the remaining passes and the
+        // remaining classes still process. Contrast the historic behaviour
+        // where an exception propagated out of run() and left output written
+        // for only the classes processed before the failure.
+        try {
+            ClassReader reader = new ClassReader(input);
+            ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
+            ClassVisitor visitor = pass.createVisitor(writer);
+            // EXPAND_FRAMES is required by LocalVariablesSorter (used by ArenaPass and
+            // other adapters that allocate locals mid-method). COMPUTE_FRAMES below
+            // recompresses frames on output, so there is no size penalty.
+            reader.accept(visitor, ClassReader.EXPAND_FRAMES);
+            return writer.toByteArray();
+        } catch (RuntimeException | Error e) {
+            System.err.println("[topo-transform] warning: pass "
+                    + pass.getClass().getSimpleName() + " failed on class "
+                    + classNameOf(input) + " — skipping this (class, pass): "
+                    + e);
+            return input; // skip just this pass for this class; continue the batch
+        }
+    }
+
+    /** Best-effort class internal name for diagnostics; "<unknown>" if the
+     *  bytes are unreadable (we are already in an error path). */
+    private static String classNameOf(byte[] input) {
+        try {
+            return new ClassReader(input).getClassName();
+        } catch (RuntimeException | Error e) {
+            return "<unknown>";
+        }
     }
 
     private int getOptLevel() {

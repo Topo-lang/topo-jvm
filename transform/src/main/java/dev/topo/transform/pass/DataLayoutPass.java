@@ -476,8 +476,15 @@ public class DataLayoutPass implements BasePass {
         // =====================================================================
 
         private static boolean isPrimitiveDescriptor(String desc) {
+            // Accept only the descriptors columnGetterMethod() can emit a
+            // ColumnarView accessor for. The detector MUST NOT accept a shape
+            // codegen will throw on: B/S/C/Z have no column getter, so a single
+            // byte/short/char/boolean field would reach rewrite() and abort the
+            // whole --transform run with IllegalArgumentException. Declining
+            // them here leaves the original AoS access intact (safe minimum)
+            // rather than half-rewriting and crashing.
             return switch (desc) {
-                case "I", "J", "F", "D", "B", "S", "C", "Z" -> true;
+                case "I", "J", "F", "D" -> true;
                 default -> false;
             };
         }

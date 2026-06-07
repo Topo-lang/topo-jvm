@@ -52,6 +52,8 @@ public class InlineHintPass implements BasePass {
         Map<String, List<JsonObject>> byClass = new HashMap<>();
         for (var entry : metadata.getAsJsonObject("functions").entrySet()) {
             var fn = entry.getValue().getAsJsonObject();
+            // Skip entries missing the qualifiers we key on rather than NPE.
+            if (!fn.has("qualifiedName") || !fn.has("simpleName")) continue;
             String qn = fn.get("qualifiedName").getAsString();
             String simpleName = fn.get("simpleName").getAsString();
 
@@ -69,7 +71,10 @@ public class InlineHintPass implements BasePass {
 
         for (var e : byClass.entrySet()) {
             boolean allInternalOrPrivate = e.getValue().stream().allMatch(fn -> {
-                String vis = fn.get("visibility").getAsString();
+                // Default a visibility-less entry to "public" so it correctly
+                // disqualifies the class from all-internal/private finalisation
+                // instead of NPE-ing on the missing field.
+                String vis = fn.has("visibility") ? fn.get("visibility").getAsString() : "public";
                 return "internal".equals(vis) || "private".equals(vis);
             });
             if (allInternalOrPrivate) {
@@ -127,10 +132,13 @@ public class InlineHintPass implements BasePass {
 
         for (var entry : metadata.getAsJsonObject("functions").entrySet()) {
             var fn = entry.getValue().getAsJsonObject();
+            if (!fn.has("qualifiedName")) continue;
             String name = fn.get("qualifiedName").getAsString();
             if (!name.equals(classQ) && (nsQ == null || !name.equals(nsQ))) continue;
 
-            String vis = fn.get("visibility").getAsString();
+            // Default a visibility-less entry to "public" (no ACC_FINAL) rather
+            // than NPE — public methods are not finalisation candidates anyway.
+            String vis = fn.has("visibility") ? fn.get("visibility").getAsString() : "public";
             if ("internal".equals(vis) || "private".equals(vis)) {
                 return access | Opcodes.ACC_FINAL;
             }

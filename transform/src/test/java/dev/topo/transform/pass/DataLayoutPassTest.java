@@ -514,4 +514,88 @@ class DataLayoutPassTest {
         assertTrue(hasColumnarViewCall(output, "process"),
             "getColumnarView() should be present for force-mode SoA transform");
     }
+
+    // =========================================================================
+    // Regression: detector must decline B/S/C/Z fields it has no column
+    // getter for, rather than reaching rewrite() and throwing
+    // IllegalArgumentException that aborts the whole --transform run (issue
+    // jvm-transform-pass-miscompiles #17/#18).
+    // =========================================================================
+
+    /**
+     * Generate a class accessing a single primitive field of the given
+     * descriptor, returning that primitive (so the method stays verifiable).
+     */
+    private byte[] generateTypedFieldClass(String fieldName, String fieldDesc, int returnOpcode) {
+        ClassWriter cw = new ClassWriter(0);
+        cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Processor", null,
+                "java/lang/Object", null);
+
+        var init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitCode();
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(1, 1);
+        init.visitEnd();
+
+        var mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "process",
+                "(Ldev/topo/Array;I)" + fieldDesc, null, null);
+        mv.visitCode();
+        mv.visitVarInsn(Opcodes.ALOAD, 1);
+        mv.visitVarInsn(Opcodes.ILOAD, 2);
+        mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "dev/topo/Array", "get",
+                "(I)Ljava/lang/Object;", false);
+        mv.visitTypeInsn(Opcodes.CHECKCAST, "app/Particle");
+        mv.visitFieldInsn(Opcodes.GETFIELD, "app/Particle", fieldName, fieldDesc);
+        mv.visitInsn(returnOpcode);
+        mv.visitMaxs(3, 3);
+        mv.visitEnd();
+
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    @Test
+    void byteFieldDeclinedNotCrashing() {
+        byte[] input = generateTypedFieldClass("flag", "B", Opcodes.IRETURN);
+        var metadata = buildMetadataWithPattern("app::Processor::process", "streaming");
+
+        // Previously threw IllegalArgumentException ("No column getter for B")
+        // out of rewrite(); the detector must now decline B and leave the
+        // original access intact.
+        byte[] output = assertDoesNotThrow(
+            () -> applyPass(input, defaultConfig(), metadata),
+            "byte-field SoA candidate must be declined, not crash the run");
+
+        assertEquals(1, countGetField(output, "process", "flag"),
+            "GETFIELD for byte field should be preserved (declined)");
+        assertEquals(0, countOpcode(output, "process", Opcodes.BALOAD),
+            "no column load should be emitted for a declined byte field");
+        assertFalse(hasColumnarViewCall(output, "process"),
+            "getColumnarView() must not be emitted for a declined byte field");
+    }
+
+    @Test
+    void shortCharBooleanFieldsDeclined() {
+        // S, C, Z all share the missing-column-getter gap; each must decline.
+        String[][] cases = {
+            {"s", "S"},
+            {"c", "C"},
+            {"b", "Z"},
+        };
+        for (String[] c : cases) {
+            byte[] input = generateTypedFieldClass(c[0], c[1], Opcodes.IRETURN);
+            var metadata = buildMetadataWithPattern("app::Processor::process", "streaming");
+
+            byte[] output = assertDoesNotThrow(
+                () -> applyPass(input, defaultConfig(), metadata),
+                "field of descriptor " + c[1] + " must be declined, not crash");
+
+            assertEquals(1, countGetField(output, "process", c[0]),
+                "GETFIELD for descriptor " + c[1] + " should be preserved (declined)");
+            assertFalse(hasColumnarViewCall(output, "process"),
+                "getColumnarView() must not be emitted for declined descriptor " + c[1]);
+        }
+    }
 }
