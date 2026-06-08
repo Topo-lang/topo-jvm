@@ -97,7 +97,7 @@ endif()
 
 gtest_discover_tests(topo-e2e-java DISCOVERY_TIMEOUT 30
     PROPERTIES
-        LABELS "e2e;java"
+        LABELS "e2e\;java"
         TIMEOUT 180
 )
 include(${PROJECT_SOURCE_DIR}/cmake/TopoE2eProjectLocks.cmake)
@@ -159,7 +159,7 @@ endif()
 include(GoogleTest)
 gtest_discover_tests(topo-e2e-jvm-bench DISCOVERY_TIMEOUT 30
     PROPERTIES
-        LABELS "e2e;perf;benchmark"
+        LABELS "e2e\;perf\;benchmark"
         FIXTURES_REQUIRED "topo_bench_artifacts"
         RESOURCE_LOCK "topo_bench_measure"
         TIMEOUT 300
@@ -191,7 +191,7 @@ include(GoogleTest)
 # registers the equivalence / jvm_equivalence sub-labels.
 gtest_discover_tests(topo-e2e-jvm-equiv DISCOVERY_TIMEOUT 30
     PROPERTIES
-        LABELS "e2e;equivalence;jvm_equivalence"
+        LABELS "e2e\;equivalence\;jvm_equivalence"
         TIMEOUT 300
 )
 include(${PROJECT_SOURCE_DIR}/cmake/TopoE2eProjectLocks.cmake)

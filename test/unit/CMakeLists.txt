@@ -25,4 +25,4 @@ add_dependencies(topo-build-jvm-java-input-trust-tests topo-build-jvm-java)
 topo_set_compiler_flags(topo-build-jvm-java-input-trust-tests)
 
 gtest_discover_tests(topo-build-jvm-java-input-trust-tests
-    PROPERTIES LABELS "toolchain;jvm" TIMEOUT 30)
+    PROPERTIES LABELS "toolchain\;jvm" TIMEOUT 30)
