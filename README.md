@@ -70,12 +70,14 @@ reachable.
 ### Windows
 
 `topo-transform.jar` (the 15-pass ASM bytecode rewriter) and
-`topo-decompile-jvm` (the JVMLifter) are **not built or tested on Windows CI**
-yet — the Gradle subprojects that produce them hang on the Windows runners, so
-both are gated off there. `topo-build-jvm-java` itself builds on Windows, but
-the two JARs it drives are currently produced and verified on Linux/macOS only.
-To use them on Windows, build topo-jvm on Linux or macOS and copy the installed
-`share/topo-jvm/lib/*.jar` into your Windows install.
+`topo-decompile-jvm` (the JVMLifter) build and run on all three CI platforms,
+**Windows included**. The earlier ~20-minute Windows hang was Gradle
+auto-downloading the pinned JDKs over the Windows runner's slow I/O; CI now
+provisions JDK 21 (transform) + 17 (decompile) up front and points each
+subproject's `gradle.properties` at them with `auto-download=false`, so no
+download happens and both JARs build cleanly on `windows-2022`. To build them
+yourself on Windows, supply those two JDKs (or set `TOPO_GRADLE_JAVA_HOME`) and
+keep `TOPO_JVM_BUILD_TRANSFORM` / `TOPO_JVM_BUILD_DECOMPILE` `ON`.
 
 ## Install
 
