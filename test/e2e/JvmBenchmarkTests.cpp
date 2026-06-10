@@ -83,7 +83,9 @@ protected:
                 return RunResult{0, "[prebuilt] " + candidate.generic_string()};
             }
         }
-        auto r = platform::runProcessCapture(topoBuildExe_.generic_string(), {}, projDir.generic_string());
+        // --no-check: backend-pipeline suites opt out of the auto-check that
+        // force-mode optimizations now trigger (see JvmEquivalenceTests).
+        auto r = platform::runProcessCapture(topoBuildExe_.generic_string(), {"--no-check"}, projDir.generic_string());
         return RunResult{r.exitCode, mergeOutput(r)};
     }
 

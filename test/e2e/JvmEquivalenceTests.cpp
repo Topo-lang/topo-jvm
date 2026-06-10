@@ -40,7 +40,12 @@ protected:
 
     RunResult topoBuildJvm(const std::string& project) {
         fs::path projDir = jvmBenchmarksDir_ / project;
-        auto r = platform::runProcessCapture(topoBuildExe_.generic_string(), {}, projDir.generic_string());
+        // --no-check: these suites verify the JVM backend pipeline, not
+        // declaration conformance (the checker has its own suites), and
+        // topo-core's auto-check-when-optimizing would otherwise gate every
+        // force-mode fixture on check-clean declarations. Same opt-out as
+        // topo-llvm's e2e harness; the UNVERIFIED warning is expected noise.
+        auto r = platform::runProcessCapture(topoBuildExe_.generic_string(), {"--no-check"}, projDir.generic_string());
         return RunResult{r.exitCode, mergeOutput(r)};
     }
 
