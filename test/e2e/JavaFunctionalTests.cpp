@@ -13,7 +13,9 @@ protected:
         fs::path projDir = jvmBenchmarksDir_ / projectName;
         std::string exe = topoBuildExe_.generic_string();
         std::string workDir = projDir.generic_string();
-        auto r = platform::runProcessCapture(exe, {}, workDir);
+        // --no-check: backend-pipeline suites opt out of the auto-check that
+        // force-mode optimizations now trigger (see JvmEquivalenceTests).
+        auto r = platform::runProcessCapture(exe, {"--no-check"}, workDir);
         return RunResult{r.exitCode, mergeOutput(r)};
     }
 
