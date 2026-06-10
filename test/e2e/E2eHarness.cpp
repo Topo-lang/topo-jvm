@@ -175,7 +175,12 @@ RunResult E2eFixture::topoBuild(const std::string& projectName,
     std::string exe = topoBuildExe_.generic_string();
     std::string workDir = projDir.generic_string();
 
-    auto r = platform::runProcessCapture(exe, {}, workDir);
+    // Always --no-check: e2e suites verify the BACKEND pipeline, not
+    // declaration conformance — the checker has its own suites, and the
+    // benchmark fixtures are not check-clean. Keeps this base funnel in
+    // line with the per-suite funnels (JvmEquivalence/JvmBenchmark/
+    // JavaFunctional) so a future caller does not trip auto-check.
+    auto r = platform::runProcessCapture(exe, {"--no-check"}, workDir);
     return RunResult{r.exitCode, mergeOutput(r)};
 }
 
