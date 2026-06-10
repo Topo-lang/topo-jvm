@@ -148,10 +148,13 @@ int main(int argc, char* argv[]) {
     std::string javaHome = req.backendExtras.value("javaHome", std::string());
     // Pin to Java 21 by default. The ceiling is set by two independent
     // constraints:
-    //   * topo-jvm/decompile/build.gradle.kts still pins ASM 9.7.1, which
-    //     reads up to class-file major v65 (Java 21). decompile/ feeds
-    //     JVMLifter; raising its ASM version requires a corresponding
-    //     bump there too.
+    //   * topo-jvm/decompile/build.gradle.kts pins ASM 9.7.1. Its real read
+    //     ceiling is well above v65 — it is the validateTargetVersion cap
+    //     ({8,11,17,21} → at most v65 user bytecode) that keeps decompile
+    //     safe. The two are COUPLED: raising the cap toward JDK 22+/25 user
+    //     bytecode requires re-checking (and likely bumping) decompile's ASM
+    //     in the same change, or JVMLifter starts rejecting the newer user
+    //     artifacts it is then fed.
     //   * topo-jvm/transform/build.gradle.kts pins the transform JVM
     //     toolchain to JDK 21 (`languageVersion.set(of(21))`), so the
     //     emitted topo-transform.jar is itself v65 bytecode regardless

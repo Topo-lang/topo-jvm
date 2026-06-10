@@ -17,6 +17,10 @@ repositories {
 }
 
 dependencies {
+    // COUPLED to topo-build-jvm-java's validateTargetVersion cap (main.cpp):
+    // the {8,11,17,21} cap is what keeps user bytecode within what this ASM
+    // reads. Raising the cap toward JDK 22+/25 → re-check/bump ASM here in
+    // the same change (transform/ already carries 9.8 for the v69 runtime jar).
     implementation("org.ow2.asm:asm:9.7.1")
     implementation("org.ow2.asm:asm-tree:9.7.1")
     implementation("com.google.code.gson:gson:2.11.0")
