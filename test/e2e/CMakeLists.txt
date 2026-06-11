@@ -221,3 +221,40 @@ set_tests_properties(e2e.jvm_tomlswap PROPERTIES
     LABELS "toolchain;topo-jvm"
 )
 
+# --- Benchmark declaration check guard ---
+#
+# Every benchmarks/<project>/Topo.toml must stay check-clean: scaffolding
+# symbols are listed in each project's [completeness] ignores, so any new
+# undeclared symbol (or dangling declaration) fails the gate. Projects with
+# `check = "off"` in [build] are skipped — that setting is the explicit
+# opt-out. topo-check runs L1-only here (regex extraction, no javac), cheap
+# enough for the deterministic e2e gate.
+#
+# RESOURCE_LOCK pairs each guard with the equivalence cases on the same
+# project: those swap Topo.toml in place (TopoTomlSwap RAII), and a
+# concurrent topo-check read of a swapped file would check the wrong config.
+# Single "e2e" label — see the LABELS mis-parse note above; add_test paths
+# parse lists fine, but one label is all this guard needs.
+if(TARGET topo::cli::topo-check)
+    file(GLOB _check_clean_tomls "${PROJECT_SOURCE_DIR}/benchmarks/*/Topo.toml")
+    foreach(_toml IN LISTS _check_clean_tomls)
+        file(READ "${_toml}" _toml_content)
+        if(_toml_content MATCHES "check *= *\"off\"")
+            continue()
+        endif()
+        get_filename_component(_proj_dir "${_toml}" DIRECTORY)
+        get_filename_component(_proj "${_proj_dir}" NAME)
+        add_test(NAME e2e.check_clean.${_proj}
+            COMMAND $<TARGET_FILE:topo::cli::topo-check> --project "${_proj_dir}")
+        set_tests_properties(e2e.check_clean.${_proj} PROPERTIES
+            LABELS "e2e"
+            RESOURCE_LOCK "topo_e2e_jvm_${_proj}"
+            TIMEOUT 120)
+    endforeach()
+    unset(_check_clean_tomls)
+    unset(_toml_content)
+else()
+    message(STATUS "topo-jvm e2e: topo::cli::topo-check not found — "
+        "benchmark check-clean guard SKIPPED.")
+endif()
+
