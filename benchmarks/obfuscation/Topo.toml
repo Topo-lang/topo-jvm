@@ -17,3 +17,13 @@ target_version = "21"
 mode = "dev"
 obfuscation = "salted"
 obfuscation_salt = "topo-e2e-test"
+
+# Benchmark scaffolding symbols are outside the .topo contract (check-only; no optimization effect).
+[completeness]
+ignore_constructors = true
+ignore_destructors = true
+ignore_patterns = [
+    "app::Main::benchmarkMedianUs",
+    "app::Main::friendlyWork",
+    "app::Main::unfriendlyWork",
+]
