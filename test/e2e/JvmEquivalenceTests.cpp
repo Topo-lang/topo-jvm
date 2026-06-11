@@ -752,8 +752,11 @@ TEST_F(JvmEquivalence, ObfuscationPass_ForcedMatchesVanilla) {
 // Functional assertions:
 //   - Topo JAR user class (app.Main) references `dev/topo/Observe$StageEvent`;
 //     vanilla JAR does not.
-//   - Overhead upper bound: `topo/vanilla < 1.10` (relaxed — one-shot ratio
-//     has +/-5% noise band on this harness).
+// The topo/vanilla overhead ratio is informational only (RecordProperty +
+// stdout INFO). The asserted INSTRUMENT bound (<=1.10 pass / <=1.20 warn on
+// interleaved-round means) lives in the perf lane: JvmPassBench
+// Observability_{Friendly,Unfriendly} -> assertInstrumentCategoryContract
+// (E2eHarness.cpp).
 TEST_F(JvmEquivalence, ObservabilityPass_FunctionalInjection) {
     ASSERT_FALSE(jvmBenchmarksDir_.empty()) << "TOPO_JVM_BENCHMARKS_DIR not set";
 
@@ -785,15 +788,18 @@ TEST_F(JvmEquivalence, ObservabilityPass_FunctionalInjection) {
         << "observability: vanilla JAR unexpectedly references StageEvent "
         << "(should only appear after ObservabilityPass transform).";
 
-    // 2. Overhead upper bound (JFR off at runtime — pure call-site cost).
-    constexpr double kNoiseFloorUs = 10000.0;
-    if (vanillaUs > 0 && topoUs > 0 && vanillaUs >= kNoiseFloorUs) {
+    // 2. Overhead ratio — informational only. A one-shot wall-clock ratio on
+    // shared runners is not a pass/fail signal (bound exceeded on macos-14,
+    // run 27264088723 attempt 1; immediate rerun green); this gate stays
+    // timing-free per the ci.yml contract. The asserted bound lives in the
+    // perf lane (assertInstrumentCategoryContract).
+    if (vanillaUs > 0 && topoUs > 0) {
         double ratio = topoUs / vanillaUs;
-        EXPECT_LE(ratio, 1.10)
-            << "observability: topo/vanilla overhead " << ratio
-            << " exceeds 1.10 upper bound (vanilla=" << vanillaUs
-            << "us, topo=" << topoUs << "us)";
-        std::printf("[  INFO  ] jvm/observability: overhead topo/vanilla = %.3f\n", ratio);
+        ::testing::Test::RecordProperty("observability_overhead_topo_vanilla",
+                                        std::to_string(ratio));
+        std::printf("[  INFO  ] jvm/observability: overhead topo/vanilla = %.3f "
+                    "(informational; asserted bound lives in the perf lane)\n",
+                    ratio);
     }
     std::printf("[  INFO  ] jvm/observability: topo has StageEvent=%d, vanilla has=%d\n",
                 topoHasStageEvent, vanillaHasStageEvent);
