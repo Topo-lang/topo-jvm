@@ -19,3 +19,14 @@ default_arena_size = 65536
 
 [builder]
 mode = "dev"
+
+# Benchmark scaffolding symbols are outside the .topo contract (check-only; no optimization effect).
+[completeness]
+ignore_constructors = true
+ignore_destructors = true
+ignore_patterns = [
+    "app::Main",
+    "app::Main::benchmarkMedianUs",
+    "app::Main::run",
+    "app::Main::runUnfriendly",
+]

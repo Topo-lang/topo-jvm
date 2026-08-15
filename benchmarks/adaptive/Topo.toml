@@ -24,3 +24,18 @@ min_trigger_ns = 10000
 
 [builder]
 mode = "dev"
+
+# Benchmark scaffolding symbols are outside the .topo contract (check-only; no optimization effect).
+[completeness]
+ignore_constructors = true
+ignore_destructors = true
+ignore_patterns = [
+    "app::Main",
+    "app::Main::ExceptionInInitializerError",
+    "app::Main::RuntimeException",
+    "app::Main::benchmarkMedianUs",
+    "app::Main::fastImpl",
+    "app::Main::run",
+    "app::Main::runUnfriendly",
+    "app::Main::slowImpl",
+]

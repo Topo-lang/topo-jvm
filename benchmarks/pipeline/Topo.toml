@@ -15,3 +15,16 @@ target_version = "21"
 
 [builder]
 mode = "dev"
+
+# Benchmark scaffolding symbols are outside the .topo contract (check-only; no optimization effect).
+[completeness]
+ignore_constructors = true
+ignore_destructors = true
+ignore_patterns = [
+    "app::Main",
+    "app::Main::benchmarkMedianUs",
+    "app::Main::emit",
+    "app::Main::processLinear",
+    "app::Main::run",
+    "app::Main::transform",
+]

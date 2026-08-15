@@ -26,9 +26,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * declare {@code void foo()}, both must get the <em>same</em>
  * obfuscated name so the JVM still treats {@code B.foo} as an
  * override of {@code A.foo} and {@code b.foo()} dispatches to
- * {@code B}'s body.
+ * {@code B}'s body. All fixture bytecode is compiled by real javac
+ * via {@link RealJavacFixture#compileAll} — hence the real-javac
+ * suite name.
  */
-class ObfuscationPassOverrideTest {
+class ObfuscationPassOverrideRealJavacTest {
 
     private JsonObject functionEntry(String qualifiedName, String visibility) {
         var fn = new JsonObject();

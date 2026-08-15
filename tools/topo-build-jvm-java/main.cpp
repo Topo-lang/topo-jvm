@@ -433,24 +433,44 @@ int main(int argc, char* argv[]) {
         }
 
         // Strategy 2: Scan compiled .class files for main([Ljava/lang/String;)V
-        if (mainClass.empty() && fs::exists(classDir)) {
-            std::string javapTool = topo::jvm::resolveJavaTool("javap", javaHome);
-            for (const auto& entry : fs::recursive_directory_iterator(classDir)) {
-                if (!entry.is_regular_file() || entry.path().extension() != ".class") continue;
-                std::vector<std::string> javapArgs = {"-p", "-s", entry.path().string()};
-                auto javapResult = topo::platform::runProcessCapture(javapTool, javapArgs, false);
-                if (javapResult.exitCode == 0 &&
-                    javapResult.stdoutOutput.find("([Ljava/lang/String;)V") != std::string::npos) {
-                    // Derive fully-qualified class name from path relative to classDir
-                    auto relPath = fs::relative(entry.path(), classDir);
-                    std::string cls = relPath.string();
-                    // Remove .class extension
-                    if (cls.size() > 6) cls = cls.substr(0, cls.size() - 6);
-                    // Convert path separators to dots
-                    std::replace(cls.begin(), cls.end(), '/', '.');
-                    std::replace(cls.begin(), cls.end(), '\\', '.');
-                    mainClass = cls;
-                    break;
+        // Non-throwing scan (error_code construction + increment, same pattern
+        // as the analysis providers): an unreadable or vanishing entry must
+        // degrade to a warning, never abort the process.
+        if (mainClass.empty()) {
+            std::error_code dirEc;
+            if (fs::exists(classDir, dirEc)) {
+                std::string javapTool = topo::jvm::resolveJavaTool("javap", javaHome);
+                std::error_code iterEc;
+                fs::recursive_directory_iterator it(
+                    classDir, fs::directory_options::skip_permission_denied, iterEc);
+                if (iterEc) {
+                    std::cerr << "warning: cannot scan compiled classes under '"
+                              << classDir.string() << "': " << iterEc.message() << "\n";
+                } else {
+                    for (; it != fs::recursive_directory_iterator(); it.increment(iterEc)) {
+                        if (iterEc) {
+                            std::cerr << "warning: stopped scanning compiled classes under '"
+                                      << classDir.string() << "': " << iterEc.message() << "\n";
+                            break;
+                        }
+                        if (!it->is_regular_file(iterEc) || it->path().extension() != ".class")
+                            continue;
+                        std::vector<std::string> javapArgs = {"-p", "-s", it->path().string()};
+                        auto javapResult = topo::platform::runProcessCapture(javapTool, javapArgs, false);
+                        if (javapResult.exitCode == 0 &&
+                            javapResult.stdoutOutput.find("([Ljava/lang/String;)V") != std::string::npos) {
+                            // Derive fully-qualified class name from path relative to classDir
+                            auto relPath = fs::relative(it->path(), classDir);
+                            std::string cls = relPath.string();
+                            // Remove .class extension
+                            if (cls.size() > 6) cls = cls.substr(0, cls.size() - 6);
+                            // Convert path separators to dots
+                            std::replace(cls.begin(), cls.end(), '/', '.');
+                            std::replace(cls.begin(), cls.end(), '\\', '.');
+                            mainClass = cls;
+                            break;
+                        }
+                    }
                 }
             }
         }

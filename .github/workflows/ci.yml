@@ -23,7 +23,12 @@ env:
   # Pin the upstream Topo refs this build is tested against.
   TOPO_CORE_REF: main
   TOPO_LANG_REF: main
-  TOPO_LANG_JAVA_REF: main
+  # topo-lang-java is dev-pinned while the fix batch is on dev: the
+  # e2e.check_clean.* guards run topo-check over the benchmark Topo.tomls
+  # with topo-lang-java's L1 extractor, whose statement-shape rejection
+  # fix exists only on its dev branch. Flip back to main at promotion.
+  # The upstream cache keys interpolate this ref, so no suffix bump.
+  TOPO_LANG_JAVA_REF: dev
 
 jobs:
   build-and-test:
@@ -99,7 +104,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          key: topo-core-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-${{ matrix.os }}-v5
+          # v6: the topo-lang-java dev branch TIP advanced (fix batch merged
+          # to dev); the key interpolates the ref, not the ref's content, so
+          # a cache saved against the pre-merge dev would keep serving the
+          # stale extractor.
+          key: topo-core-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-${{ matrix.os }}-v6
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
@@ -179,6 +188,24 @@ jobs:
         # ceiling. A clean build (JARs + C++) finishes well under this.
         timeout-minutes: 30
         run: cmake --build build
+
+      # The two Gradle subprojects' JUnit suites execute ONLY here — ctest
+      # covers the C++ harness but has no gradle-test runner, so without this
+      # step a pass regression only the JUnit layer would catch (incl. the
+      # real-javac harness) ships green. Each suite runs under its pinned
+      # toolchain (transform=21, decompile=17), resolved via the subprojects'
+      # gradle.properties fromEnv exactly as in the jar build above.
+      # --no-daemon --console=plain matches TOPO_JVM_GRADLE_ARGS from
+      # Configure (ephemeral-runner hygiene + clean logs).
+      - name: Test (Gradle JUnit — transform + decompile)
+        # Same backstop as Build: a hung Gradle test run must fail in minutes,
+        # not burn the 6-hour job ceiling.
+        timeout-minutes: 30
+        run: |
+          cd transform
+          ./gradlew test --no-daemon --console=plain
+          cd ../decompile
+          ./gradlew test --no-daemon --console=plain
 
       - name: Test
         run: |
@@ -361,7 +388,9 @@ jobs:
           # .jar.exe output-suffix fix (Topo-lang/topo-cli#3). The cache is
           # keyed on REF=main, so without a bump a hit would serve the stale
           # buggy topo-cli install the prior windows run saved.
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v6-jvmbackend
+          # v7: same dev-tip-advanced rotation as the build-and-test cache
+          # (lang-java dev moved under the interpolated ref).
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v7-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'

@@ -29,3 +29,7 @@ benchmarks/*/.topo-cache/
 benchmarks/*/*.jar
 benchmarks/*/*.topo-passes/
 benchmarks/*/*.topo-bench/
+
+# topo-check incremental cache (written into the project source dir by
+# topo-check / the topo-build check phase)
+.topo-check-cache
