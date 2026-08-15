@@ -104,7 +104,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          key: topo-core-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-${{ matrix.os }}-v5
+          # v6: the topo-lang-java dev branch TIP advanced (fix batch merged
+          # to dev); the key interpolates the ref, not the ref's content, so
+          # a cache saved against the pre-merge dev would keep serving the
+          # stale extractor.
+          key: topo-core-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-${{ matrix.os }}-v6
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
@@ -384,7 +388,9 @@ jobs:
           # .jar.exe output-suffix fix (Topo-lang/topo-cli#3). The cache is
           # keyed on REF=main, so without a bump a hit would serve the stale
           # buggy topo-cli install the prior windows run saved.
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v6-jvmbackend
+          # v7: same dev-tip-advanced rotation as the build-and-test cache
+          # (lang-java dev moved under the interpolated ref).
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v7-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
