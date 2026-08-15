@@ -180,6 +180,24 @@ jobs:
         timeout-minutes: 30
         run: cmake --build build
 
+      # The two Gradle subprojects' JUnit suites execute ONLY here — ctest
+      # covers the C++ harness but has no gradle-test runner, so without this
+      # step a pass regression only the JUnit layer would catch (incl. the
+      # real-javac harness) ships green. Each suite runs under its pinned
+      # toolchain (transform=21, decompile=17), resolved via the subprojects'
+      # gradle.properties fromEnv exactly as in the jar build above.
+      # --no-daemon --console=plain matches TOPO_JVM_GRADLE_ARGS from
+      # Configure (ephemeral-runner hygiene + clean logs).
+      - name: Test (Gradle JUnit — transform + decompile)
+        # Same backstop as Build: a hung Gradle test run must fail in minutes,
+        # not burn the 6-hour job ceiling.
+        timeout-minutes: 30
+        run: |
+          cd transform
+          ./gradlew test --no-daemon --console=plain
+          cd ../decompile
+          ./gradlew test --no-daemon --console=plain
+
       - name: Test
         run: |
           # Windows: the input-trust suite spawns the MinGW-linked
