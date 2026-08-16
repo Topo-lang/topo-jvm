@@ -12,6 +12,15 @@ java {
     }
 }
 
+// Deterministic source encoding: javac defaults to the PLATFORM encoding,
+// which is windows-1252 on Windows runners — the UTF-8 arrows/em-dashes in
+// the pass sources (e.g. LoopVectorizePass.java "FALOAD ← IALOAD") fail to
+// compile there ("unmappable character (0x90)"). Pin UTF-8 for every
+// JavaCompile task (compileJava AND compileTestJava).
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+}
+
 repositories {
     mavenCentral()
 }
