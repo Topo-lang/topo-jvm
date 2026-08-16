@@ -23,12 +23,9 @@ env:
   # Pin the upstream Topo refs this build is tested against.
   TOPO_CORE_REF: main
   TOPO_LANG_REF: main
-  # topo-lang-java is dev-pinned while the fix batch is on dev: the
-  # e2e.check_clean.* guards run topo-check over the benchmark Topo.tomls
-  # with topo-lang-java's L1 extractor, whose statement-shape rejection
-  # fix exists only on its dev branch. Flip back to main at promotion.
-  # The upstream cache keys interpolate this ref, so no suffix bump.
-  TOPO_LANG_JAVA_REF: dev
+  # topo-lang-java unpinned at promotion (2026-08-16): the L1 extractor
+  # statement-shape fix is on main now.
+  TOPO_LANG_JAVA_REF: main
 
 jobs:
   build-and-test:
