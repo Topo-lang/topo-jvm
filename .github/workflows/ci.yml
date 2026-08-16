@@ -536,6 +536,19 @@ jobs:
         # zero tests while the step stayed green (issue
         # jvm-timing-guard-regex-zero-tests).
         run: |
+          # Same compiler-dir PATH prepend as the Test step above: the
+          # topo-build family is mingw-built and its runtime DLLs
+          # (libstdc++-6/libgcc_s_seh/libwinpthread) resolve from the
+          # build toolchain's bin dir; without it first on PATH the loader
+          # picks Git's mingw64 copies and the exes abort with 0xC0000139
+          # (see topo-core 44d3155; proven by the import-table diagnostic
+          # in the bench driver, run 31930270048).
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cxx=$(grep -m1 '^CMAKE_CXX_COMPILER:' build/CMakeCache.txt | cut -d= -f2)
+            if [ -n "$cxx" ]; then
+              export PATH="$(cygpath -u "$(dirname "$cxx")"):${PATH}"
+            fi
+          fi
           # set +e around the capture: with set -e, _out="$(ctest ...)"
           # inherits ctest's exit status into the assignment and the script
           # dies before printf — swallowing the very output this guard is
