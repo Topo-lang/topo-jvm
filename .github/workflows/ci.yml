@@ -511,13 +511,24 @@ jobs:
           fi
           ctest --test-dir build -L e2e --label-exclude "perf|benchmark" --output-on-failure --timeout 300
 
-      # Manual-only regression guard for the obfuscation timing hang. The
-      # JvmPassBench_obfuscation case used to exceed the 300s per-test ctest
-      # TIMEOUT on shared ubuntu runners (500_000-iteration inner loops);
-      # benchmarks/obfuscation/.../Main.java cut WORK to 20_000. Run that case
-      # under the same 300s TIMEOUT to prove it now finishes comfortably.
-      # Scoped to the obfuscation case so this stays fast (drop -R to time the
-      # full suite). Requires BENCH_FLAG above, so it is workflow_dispatch only.
-      - name: Timing bench — obfuscation 300s-timeout regression guard (manual)
+      # Manual-only timing lane. Two jobs:
+      #  1. Obfuscation 300s-timeout regression guard: the obfuscation cases
+      #     used to exceed the 300s per-test ctest TIMEOUT on shared ubuntu
+      #     runners (500_000-iteration inner loops); benchmarks/obfuscation/.../
+      #     Main.java cut WORK to 20_000. Run them under the same 300s TIMEOUT
+      #     to prove they still finish comfortably.
+      #  2. Standing perf triage surface: JvmPassBench_ENHANCE_Lifetime_Unfriendly
+      #     is the one JvmPassBench timing case with an unresolved absolute-ratio
+      #     failure (stable ~1.22x on a dev macOS machine) — keep it in the
+      #     manual lane so a public runner can reproduce or clear it.
+      # The -R regex must match the DISCOVERED test names
+      # JvmPassBench_<CATEGORY>_<Name>.Run (the category token sits between
+      # suite and case name — see CATEGORY_BENCH_TEST_F in
+      # test/e2e/E2eHarness.h). Requires BENCH_FLAG above, so it is
+      # workflow_dispatch only.
+      - name: Timing bench — obfuscation timeout guard + lifetime-unfriendly triage (manual)
         if: github.event_name == 'workflow_dispatch'
-        run: ctest --test-dir build -L benchmark -R JvmPassBench_obfuscation --output-on-failure --timeout 300
+        # Backstop: three timing cases (each up to 10 interleaved rounds) must
+        # not approach the 60-min job ceiling; per-test TIMEOUT stays 300s.
+        timeout-minutes: 30
+        run: ctest --test-dir build -L benchmark -R "JvmPassBench_INSTRUMENT_Obfuscation_(Friendly|Unfriendly)|JvmPassBench_ENHANCE_Lifetime_Unfriendly" --output-on-failure --timeout 300
