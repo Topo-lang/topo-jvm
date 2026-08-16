@@ -387,7 +387,11 @@ jobs:
           # buggy topo-cli install the prior windows run saved.
           # v7: same dev-tip-advanced rotation as the build-and-test cache
           # (lang-java dev moved under the interpolated ref).
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v7-jvmbackend
+          # v8: topo-cli MAIN advanced at promotion (2026-08-16); the
+          # cli-main segment is a literal and cannot interpolate the ref's
+          # content — without a bump a hit would serve the pre-promotion
+          # topo-cli install.
+          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v8-jvmbackend
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
