@@ -531,4 +531,16 @@ jobs:
         # Backstop: three timing cases (each up to 10 interleaved rounds) must
         # not approach the 60-min job ceiling; per-test TIMEOUT stays 300s.
         timeout-minutes: 30
-        run: ctest --test-dir build -L benchmark -R "JvmPassBench_INSTRUMENT_Obfuscation_(Friendly|Unfriendly)|JvmPassBench_ENHANCE_Lifetime_Unfriendly" --output-on-failure --timeout 300
+        # Fail loudly on an empty selection: ctest exits 0 when -R matches
+        # nothing, which is how the previous regex spent months selecting
+        # zero tests while the step stayed green (issue
+        # jvm-timing-guard-regex-zero-tests).
+        run: |
+          _out="$(ctest --test-dir build -L benchmark -R "JvmPassBench_INSTRUMENT_Obfuscation_(Friendly|Unfriendly)|JvmPassBench_ENHANCE_Lifetime_Unfriendly" --output-on-failure --timeout 300 2>&1)"
+          _rc=$?
+          printf '%s\n' "${_out}"
+          if printf '%s\n' "${_out}" | grep -q "No tests were found"; then
+            echo "::error::timing step selected zero tests — the -R regex matched no discovered name (check CATEGORY_BENCH_TEST_F name synthesis)"
+            exit 1
+          fi
+          exit ${_rc}
