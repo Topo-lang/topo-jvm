@@ -46,8 +46,9 @@ ctest --test-dir build --output-on-failure
 The `transform/` and `decompile/` subprojects build their JARs via
 Gradle. Each subproject ships its own `gradlew` wrapper (Gradle 9.5.1);
 the build picks it up automatically. A system-wide `gradle` binary on
-`PATH` is honored first if present. Either way, a usable JDK is
-required:
+`PATH` is honored first if present. Both subprojects use a JDK 25 toolchain
+and emit Java 25 class files. Building and running the JVM tools requires
+JDK 25:
 
 - Auto-resolved from `TOPO_GRADLE_JAVA_HOME`, then `JAVA_HOME`.
 - If neither resolves, Gradle falls back to its own resolution.
@@ -73,11 +74,17 @@ reachable.
 `topo-decompile-jvm` (the JVMLifter) build and run on all three CI platforms,
 **Windows included**. The earlier ~20-minute Windows hang was Gradle
 auto-downloading the pinned JDKs over the Windows runner's slow I/O; CI now
-provisions JDK 21 (transform) + 17 (decompile) up front and points each
-subproject's `gradle.properties` at them with `auto-download=false`, so no
-download happens and both JARs build cleanly on `windows-2022`. To build them
-yourself on Windows, supply those two JDKs (or set `TOPO_GRADLE_JAVA_HOME`) and
-keep `TOPO_JVM_BUILD_TRANSFORM` / `TOPO_JVM_BUILD_DECOMPILE` `ON`.
+provisions JDK 25 up front and points each subproject's `gradle.properties`
+at it with `auto-download=false`. For local Windows builds, install JDK 25
+and set `JAVA_HOME` or `TOPO_GRADLE_JAVA_HOME`.
+
+### Java bytecode targets
+
+User code defaults to `--release 25` (class major 69). An explicit
+`[build.java].target_version` of `8`, `11`, `17`, or `21` still selects older
+user bytecode. Both ASM tools read Java 25 bytecode and older releases.
+The bundled Topo runtime and the tools themselves require Java 25 even when
+user classes are compiled for an older release.
 
 ## Install
 

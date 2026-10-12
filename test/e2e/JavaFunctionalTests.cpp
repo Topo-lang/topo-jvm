@@ -1,8 +1,10 @@
 #include "E2eHarness.h"
 
 #include "topo/Platform/Process.h"
+#include "topo/Platform/Platform.h"
 
 #include <cstring>
+#include <cstdlib>
 #include <fstream>
 
 namespace topo::test::e2e {
@@ -28,6 +30,67 @@ protected:
         return runJar(jarPath.generic_string());
     }
 };
+
+TEST_F(JavaFunctional, Java25DefaultTarget) {
+    // Omit target_version deliberately: exercise the user-facing default
+    // through topo-build, javac, both verifiers, transformation and packaging.
+    fs::path dir = fs::temp_directory_path() / "topo-e2e-java25-default";
+    struct Cleanup {
+        fs::path path;
+        ~Cleanup() { std::error_code ec; fs::remove_all(path, ec); }
+    } cleanup{dir};
+    fs::create_directories(dir / "src");
+    fs::create_directories(dir / "topo");
+    std::ofstream(dir / "src" / "Main.java") << R"(
+package app;
+public class Main {
+    private final int value;
+    public Main(int input) {
+        if (input < 0) throw new IllegalArgumentException();
+        super();
+        value = input;
+    }
+    public static void main(String[] args) {
+        System.out.println(new Main(42).value);
+    }
+}
+)";
+    std::ofstream(dir / "topo" / "main.topo")
+        << "namespace app { public: type Main {} }\n";
+    std::ofstream(dir / "Topo.toml") << R"(
+[project]
+name = "java25_default"
+[topo]
+root = "topo/main.topo"
+[build]
+language = "java"
+sources = ["src"]
+output = "java25.jar"
+output_type = "exe"
+[builder]
+mode = "dev"
+)";
+    auto build = platform::runProcessCapture(topoBuildExe_.generic_string(),
+        {"--no-check"}, dir.generic_string());
+    ASSERT_EQ(build.exitCode, 0) << build.stdoutOutput << build.stderrOutput;
+    fs::path jar = dir / "build" / "java25.jar";
+    if (!fs::exists(jar)) jar = dir / "java25.jar";
+    ASSERT_TRUE(fs::exists(jar));
+    auto run = runJar(jar.generic_string());
+    ASSERT_EQ(run.exitCode, 0) << run.output;
+    assertOutputMatches(run.output, "42\n");
+
+    std::string javap = "javap";
+    if (const char* javaHome = std::getenv("JAVA_HOME")) {
+        javap = (fs::path(javaHome) / "bin" /
+            (platform::IsWindows ? "javap.exe" : "javap")).generic_string();
+    }
+    auto inspect = platform::runProcessCapture(javap,
+        {"-verbose", "-classpath", jar.generic_string(), "app.Main"});
+    ASSERT_EQ(inspect.exitCode, 0) << inspect.stderrOutput;
+    EXPECT_NE(inspect.stdoutOutput.find("major version: 69"), std::string::npos)
+        << inspect.stdoutOutput;
+}
 
 // --- Java Visibility ---
 TEST_F(JavaFunctional, JavaVisibility) {
@@ -239,7 +302,7 @@ TEST_F(JavaFunctional, JavaBuildError) {
           << "[build]\nlanguage = \"java\"\n"
           << "sources = [\"src/main/java\"]\n"
           << "output = \"bad.jar\"\noutput_type = \"exe\"\n\n"
-          << "[build.java]\ntarget_version = \"21\"\n\n"
+          << "[build.java]\ntarget_version = \"25\"\n\n"
           << "[builder]\nmode = \"dev\"\n";
     }
 

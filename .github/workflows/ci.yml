@@ -49,20 +49,13 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja
 
-      # Provide BOTH pinned Gradle toolchains: 21 (transform) + 17 (decompile,
-      # and the topo-build-jvm-java backend tool's run-time javac). setup-java
-      # exports JAVA_HOME_21_<arch> + JAVA_HOME_17_<arch>, which the subprojects'
-      # gradle.properties `fromEnv` points at (with auto-download=false). The
-      # last version listed wins JAVA_HOME, so JAVA_HOME stays 17 for the
-      # backend tool. This replaces the auto-download that stalled ~20 min on
-      # the Windows runner.
-      - name: Set up JDKs (21 transform + 17 decompile/backend)
+      # Build and execute every JVM component with the same JDK 25.
+      # fromEnv resolves setup-java's installation without auto-download.
+      - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: |
-            21
-            17
+          java-version: '25'
 
       # Cache the Gradle artifacts (foojay-resolver plugin, ASM, gson, JUnit)
       # that the transform/ + decompile/ subprojects resolve from Maven Central
@@ -167,7 +160,7 @@ jobs:
         # custom commands. transform + decompile build on ALL platforms now,
         # Windows included: the former ~20 min Windows hang was Gradle
         # auto-downloading the pinned JDKs on Windows I/O. setup-java now
-        # provides 21 + 17 and the subprojects' gradle.properties
+        # provides JDK 25 and the subprojects' gradle.properties
         # (auto-download=false + fromEnv) point Gradle at them, so no download
         # happens. TOPO_JVM_GRADLE_ARGS adds --no-daemon --console=plain for
         # ephemeral-runner hygiene + clean logs.
@@ -190,7 +183,7 @@ jobs:
       # covers the C++ harness but has no gradle-test runner, so without this
       # step a pass regression only the JUnit layer would catch (incl. the
       # real-javac harness) ships green. Each suite runs under its pinned
-      # toolchain (transform=21, decompile=17), resolved via the subprojects'
+      # JDK 25 toolchain, resolved via the subprojects'
       # gradle.properties fromEnv exactly as in the jar build above.
       # --no-daemon --console=plain matches TOPO_JVM_GRADLE_ARGS from
       # Configure (ephemeral-runner hygiene + clean logs).
@@ -327,23 +320,11 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja
 
-      # 25 is listed LAST so JAVA_HOME=25 — required because the topo runtime
-      # jar (topo-lang-java runtime/build.gradle.kts) pins its Gradle toolchain
-      # to Java 25 → class v69, so the e2e program that links it must RUN on
-      # Java 25 (a Java-21 runtime aborts with UnsupportedClassVersionError).
-      # The backend javac=25 still honours `--release 21` for user classes
-      # (v65). On Linux the e2e harness runs with JAVA_HOME; on macOS it probes
-      # the newest installed JDK (CMakeLists.txt, highest-first) — both resolve
-      # to 25. 21 (transform) + 17 (decompile) stay installed for the
-      # subprojects' fromEnv toolchains.
-      - name: Set up JDKs (25 runtime/execution + 21 transform + 17 decompile)
+      - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: |
-            17
-            21
-            25
+          java-version: '25'
 
       # Cache the Gradle artifacts the transform/ + decompile/ subprojects
       # resolve from Maven Central (see the build-and-test job for the rationale)

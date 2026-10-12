@@ -11,7 +11,7 @@ output = "java_visibility_forced.jar"
 output_type = "exe"
 
 [build.java]
-target_version = "21"
+target_version = "25"
 
 [builder]
 mode = "aggressive"

@@ -133,7 +133,7 @@ protected:
         javacArgs.push_back("-d");
         javacArgs.push_back(classDir.generic_string());
         javacArgs.push_back("--release");
-        javacArgs.push_back("21");
+        javacArgs.push_back("25");
         if (fs::exists(runtimeJar)) {
             javacArgs.push_back("-classpath");
             javacArgs.push_back(runtimeJar.generic_string());

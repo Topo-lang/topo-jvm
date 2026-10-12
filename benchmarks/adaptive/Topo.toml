@@ -12,7 +12,7 @@ output_type = "exe"
 embed_ir = true
 
 [build.java]
-target_version = "21"
+target_version = "25"
 
 [parallel]
 mode = "force"

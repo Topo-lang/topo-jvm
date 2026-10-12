@@ -288,22 +288,16 @@ if(TOPO_JVM_BUILD_E2E AND TOPO_JVM_BUILD_TESTS AND (PROJECT_IS_TOP_LEVEL OR TOPO
         find_package(topo-cli CONFIG QUIET)
     endif()
 
-    # Probe a runtime JDK ≥21 for the e2e suite. topo-transform.jar is
-    # compiled to JDK 21 class files (Gradle 8.14's auto-downloaded
-    # toolchain), so `java -jar topo-transform.jar` needs a ≥21 JRE.
-    # The macOS java_home helper handles version lookup; on Linux we
-    # fall back to whatever JAVA_HOME / `java` resolves at test time.
-    set(TOPO_E2E_JAVA_HOME "")
-    if(APPLE)
-        # Highest-first: the topo runtime jar (topo-lang-java runtime/
-        # build.gradle.kts pins its Gradle toolchain to Java 25) ships as class
-        # v69, so the e2e program that links it must RUN on a JDK >= 25. Probing
-        # 21 first picked Java 21, which then aborts loading the jar with
-        # UnsupportedClassVersionError (recognises only up to v65). Pick the
-        # newest installed JDK so it can always load the runtime jar.
-        foreach(_JDK_VER 26 25 23 22 21)
+    # The tools and runtime ship Java 25 class files (major 69).
+    # Prefer the declared build JDK; macOS also supports installed-JDK lookup.
+    set(TOPO_E2E_JAVA_HOME "${TOPO_GRADLE_JAVA_HOME}")
+    if(NOT TOPO_E2E_JAVA_HOME AND DEFINED ENV{JAVA_HOME})
+        set(TOPO_E2E_JAVA_HOME "$ENV{JAVA_HOME}")
+    endif()
+    if(NOT TOPO_E2E_JAVA_HOME AND APPLE)
+        foreach(_JDK_VER 25 26)
             execute_process(
-                COMMAND /usr/libexec/java_home -v ${_JDK_VER}
+                COMMAND /usr/libexec/java_home -F -v ${_JDK_VER}
                 OUTPUT_VARIABLE _RUNTIME_JDK
                 OUTPUT_STRIP_TRAILING_WHITESPACE
                 ERROR_QUIET
@@ -314,15 +308,12 @@ if(TOPO_JVM_BUILD_E2E AND TOPO_JVM_BUILD_TESTS AND (PROJECT_IS_TOP_LEVEL OR TOPO
             endif()
         endforeach()
     endif()
-    if(NOT TOPO_E2E_JAVA_HOME AND DEFINED ENV{JAVA_HOME})
-        set(TOPO_E2E_JAVA_HOME "$ENV{JAVA_HOME}")
-    endif()
     if(TOPO_E2E_JAVA_HOME)
         message(STATUS "topo-jvm e2e: runtime JDK = ${TOPO_E2E_JAVA_HOME}")
     else()
-        message(STATUS "topo-jvm e2e: no JDK ≥21 found — e2e cases will use "
+        message(STATUS "topo-jvm e2e: no JDK ≥25 found — e2e cases will use "
             "the system JAVA_HOME at run time; some Java fixtures may fail "
-            "if it points to a <21 JDK.")
+            "if it points to a <25 JDK.")
     endif()
 
     if(NOT TARGET topo::cli::topo-build)

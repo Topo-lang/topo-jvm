@@ -83,14 +83,14 @@ static bool validateJavaHome(const std::string& javaHome) {
 }
 
 /// Validate `targetVersion`. Must be one of the recognised JDK versions
-/// the schema lists: "8" / "11" / "17" / "21".
+/// the schema lists: "8" / "11" / "17" / "21" / "25".
 static bool validateTargetVersion(const std::string& targetVersion) {
-    static const std::vector<std::string> recognised = {"8", "11", "17", "21"};
+    static const std::vector<std::string> recognised = {"8", "11", "17", "21", "25"};
     for (const auto& v : recognised) {
         if (targetVersion == v) return true;
     }
     std::cerr << "error: targetVersion: '" << targetVersion
-              << "' not in recognised set {8, 11, 17, 21}\n";
+              << "' not in recognised set {8, 11, 17, 21, 25}\n";
     return false;
 }
 
@@ -146,25 +146,10 @@ int main(int argc, char* argv[]) {
 
     // Extract JVM-specific fields from backendExtras
     std::string javaHome = req.backendExtras.value("javaHome", std::string());
-    // Pin to Java 21 by default. The ceiling is set by two independent
-    // constraints:
-    //   * topo-jvm/decompile/build.gradle.kts pins ASM 9.7.1. Its real read
-    //     ceiling is well above v65 — it is the validateTargetVersion cap
-    //     ({8,11,17,21} → at most v65 user bytecode) that keeps decompile
-    //     safe. The two are COUPLED: raising the cap toward JDK 22+/25 user
-    //     bytecode requires re-checking (and likely bumping) decompile's ASM
-    //     in the same change, or JVMLifter starts rejecting the newer user
-    //     artifacts it is then fed.
-    //   * topo-jvm/transform/build.gradle.kts pins the transform JVM
-    //     toolchain to JDK 21 (`languageVersion.set(of(21))`), so the
-    //     emitted topo-transform.jar is itself v65 bytecode regardless
-    //     of what its bundled ASM 9.8 could parse.
-    // Anything newer (JDK 22+ emits v66+) breaks the verify/transform step
-    // with `Unsupported class file major version`. JDK 17 cannot `--release 21`
-    // — the JAVA_HOME pointed at by `topo-build` must be ≥21. Callers can
-    // override via `backendExtras.targetVersion`; topo-build forwards
-    // `[build.java].target_version` from Topo.toml into that field.
-    std::string targetVersion = req.backendExtras.value("targetVersion", std::string("21"));
+    // Match the Java 25 toolchain used by the runtime, transformer and
+    // lifter (ASM 9.8 reads class major 69). Explicit older targets remain
+    // accepted for user bytecode; running the tools/runtime still needs JDK 25.
+    std::string targetVersion = req.backendExtras.value("targetVersion", std::string("25"));
     std::vector<std::string> jvmArgs;
     if (req.backendExtras.contains("jvmArgs")) jvmArgs = req.backendExtras["jvmArgs"].get<std::vector<std::string>>();
 

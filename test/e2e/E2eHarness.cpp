@@ -111,7 +111,7 @@ void E2eFixture::SetUp() {
     // TEST_LAUNCHER on windows-2022, which broke gtest discovery there. The
     // functional / equivalence / benchmark cases shell out to
     // topo-build -> topo-build-jvm-java -> javac, so the backend tool dir must
-    // be on PATH and a JDK >=21 reachable via JAVA_HOME. setenv/_putenv_s is
+    // be on PATH and a JDK >=25 reachable via JAVA_HOME. setenv/_putenv_s is
     // process-global, so the test process and its whole subprocess chain (and
     // runJar's getenv("JAVA_HOME")) inherit it — the same setenv/_putenv_s
     // pattern topo-llvm's e2e harness uses for its backend tool dirs.

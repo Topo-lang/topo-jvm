@@ -107,11 +107,11 @@ TEST_F(JvmBackendExtrasInputTrust, JvmTargetVersionMustBeRecognised) {
 }
 
 TEST_F(JvmBackendExtrasInputTrust, JvmTargetVersionRecognisedSetAccepted) {
-    // Positive control: each of the four recognised versions passes the
+    // Positive control: each recognised version passes the
     // targetVersion gate. We can't actually finish a build (no .java
     // sources, no JDK staged for unit tests), but we can assert the
     // rejection message does NOT mention targetVersion.
-    for (const std::string& v : {"8", "11", "17", "21"}) {
+    for (const std::string& v : {"8", "11", "17", "21", "25"}) {
         json extras = json::object();
         extras["targetVersion"] = v;
         auto result = invoke(makeRequest(extras));

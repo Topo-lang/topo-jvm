@@ -28,6 +28,11 @@ install(TARGETS topo-build-jvm-java
 # find_package). Lives in this subdirectory so TARGET_FILE_DIR resolves
 # in the same scope as the executable target.
 if(TOPO_JVM_DEPLOY_RUNTIME_JAR AND _RUNTIME_JAR_SRC)
+    # Unified builds produce the runtime in this build tree; standalone
+    # builds consume an already installed JAR and have no such target.
+    if(TARGET topo-runtime-java)
+        add_dependencies(topo-build-jvm-java topo-runtime-java)
+    endif()
     add_custom_command(TARGET topo-build-jvm-java POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${_RUNTIME_JAR_SRC}

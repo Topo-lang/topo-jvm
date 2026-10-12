@@ -62,8 +62,8 @@ target_link_libraries(topo-e2e-java PRIVATE E2eHarnessJvm)
 include(GoogleTest)
 # JVM toolchain env for the e2e cases. They shell out to
 # topo-build -> topo-build-jvm-java -> javac, so the backend tool dir must be
-# on PATH and (for the transform jar) a JDK >=21 reachable via JAVA_HOME.
-# TOPO_E2E_JAVA_HOME is the JDK >=21 probed at top scope.
+# on PATH and (for the transform jar) a JDK >=25 reachable via JAVA_HOME.
+# TOPO_E2E_JAVA_HOME is the JDK >=25 probed at top scope.
 #
 # Injected IN-PROCESS by the e2e harness SetUp() via setenv/_putenv_s (see
 # E2eHarness.cpp), NOT via a TEST_LAUNCHER wrapper. The previous
