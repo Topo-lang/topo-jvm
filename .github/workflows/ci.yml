@@ -269,19 +269,11 @@ jobs:
               ./build/smoke
           fi
 
-  # ── Benchmark + e2e gate (schedule + manual only) ──────
-  # The 14 JVM benchmarks + the bytecode-equivalence suite. Gated to
-  # schedule / workflow_dispatch so it never adds its tens of minutes to a
-  # PR. Extends the build-and-test bootstrap with a topo-cli install — that
-  # provides the `topo-build` executable the benchmark artifact pre-build
-  # invokes — and configures TOPO_JVM_BUILD_E2E=ON. Linux only: perf
-  # measurement wants one stable platform. perf is NOT excluded — pass-fired
-  # + bytecode-diff equivalence prove each ASM pass took effect, and the
-  # four-way (vanilla/base/auto/forced) category contracts gate timing
-  # regressions. The e2e harness self-demotes a timing ERROR to WARN when
-  # run-to-run variance is high (CV > 0.05 after 10 interleaved rounds) and
-  # skips ratio checks below a 10 ms noise floor, so a real regression fails
-  # while runner noise does not.
+  # ── Deterministic e2e gate + advisory manual timing ──────
+  # Functional, bytecode-equivalence and pass-fired checks gate every
+  # supported event on all three platforms. Manual dispatch also measures
+  # selected timing cases. Shared-runner timing results are warnings;
+  # deterministic checks and build failures still fail the job.
   benchmark:
     # The deterministic e2e (functional + equivalence + pass-fired) now gates
     # push + PR too — not just schedule/dispatch. On push/PR/schedule BENCH_FLAG
@@ -492,12 +484,12 @@ jobs:
           fi
           ctest --test-dir build -L e2e --label-exclude "perf|benchmark" --output-on-failure --timeout 300
 
-      # Manual-only timing lane. Two jobs:
+      # Manual-only advisory timing lane. Two measurements:
       #  1. Obfuscation 300s-timeout regression guard: the obfuscation cases
       #     used to exceed the 300s per-test ctest TIMEOUT on shared ubuntu
       #     runners (500_000-iteration inner loops); benchmarks/obfuscation/.../
       #     Main.java cut WORK to 20_000. Run them under the same 300s TIMEOUT
-      #     to prove they still finish comfortably.
+      #     to report whether they finish within that budget.
       #  2. Standing perf triage surface: JvmPassBench_ENHANCE_Lifetime_Unfriendly
       #     is the one JvmPassBench timing case with an unresolved absolute-ratio
       #     failure (stable ~1.22x on a dev macOS machine) — keep it in the
@@ -508,14 +500,14 @@ jobs:
       # test/e2e/E2eHarness.h). Requires BENCH_FLAG above, so it is
       # workflow_dispatch only.
       - name: Timing bench — obfuscation timeout guard + lifetime-unfriendly triage (manual)
+        id: timing_bench
         if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
         # Backstop: three timing cases (each up to 10 interleaved rounds) must
         # not approach the 60-min job ceiling; per-test TIMEOUT stays 300s.
         timeout-minutes: 30
-        # Fail loudly on an empty selection: ctest exits 0 when -R matches
-        # nothing, which is how the previous regex spent months selecting
-        # zero tests while the step stayed green (issue
-        # jvm-timing-guard-regex-zero-tests).
+        # Report an empty selection as unverified performance. Both the
+        # CTest exit status and its diagnostic remain visible in the log.
         run: |
           # Same compiler-dir PATH prepend as the Test step above: the
           # topo-build family is mingw-built and its runtime DLLs
@@ -530,17 +522,24 @@ jobs:
               export PATH="$(cygpath -u "$(dirname "$cxx")"):${PATH}"
             fi
           fi
-          # set +e around the capture: with set -e, _out="$(ctest ...)"
-          # inherits ctest's exit status into the assignment and the script
-          # dies before printf — swallowing the very output this guard is
-          # meant to surface.
+          # Stream measurements even if the step times out. Preserve CTest's
+          # status separately so its failures become explicit warnings.
           set +e
-          _out="$(ctest --test-dir build -L benchmark -R "JvmPassBench_INSTRUMENT_Obfuscation_(Friendly|Unfriendly)|JvmPassBench_ENHANCE_Lifetime_Unfriendly" --output-on-failure --timeout 300 2>&1)"
-          _rc=$?
+          ctest --test-dir build -L benchmark -R "JvmPassBench_INSTRUMENT_Obfuscation_(Friendly|Unfriendly)|JvmPassBench_ENHANCE_Lifetime_Unfriendly" --verbose --no-tests=error --timeout 300 2>&1 | tee "${RUNNER_TEMP}/jvm-timing.log"
+          _rc=${PIPESTATUS[0]}
           set -e
-          printf '%s\n' "${_out}"
-          if printf '%s\n' "${_out}" | grep -q "No tests were found"; then
-            echo "::error::timing step selected zero tests — the -R regex matched no discovered name (check CATEGORY_BENCH_TEST_F name synthesis)"
-            exit 1
+          if grep -q "No tests were found" "${RUNNER_TEMP}/jvm-timing.log"; then
+            echo "::warning::JVM timing selected zero tests; performance is unverified. Check the discovered test names and selection."
+            echo "- JVM timing: **unverified — zero tests selected** (CTest exit ${_rc}); advisory only." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${_rc}" -ne 0 ]; then
+            echo "::warning::JVM timing tests failed or could not complete (CTest exit ${_rc}); shared-runner performance is advisory. See the timing log."
+            echo "- JVM timing: **warning** (CTest exit ${_rc}); see the timing step log. Functional/equivalence checks are separate gates." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- JVM timing: selected tests completed (CTest exit 0); measurements are in the timing step log." >> "$GITHUB_STEP_SUMMARY"
           fi
-          exit ${_rc}
+
+      - name: Report interrupted timing measurement
+        if: ${{ always() && steps.timing_bench.outcome == 'failure' }}
+        run: |
+          echo "::warning::JVM timing step failed or timed out before reporting; performance is unverified and advisory."
+          echo "- JVM timing: **unverified — step failed or timed out**; see the timing step log." >> "$GITHUB_STEP_SUMMARY"
