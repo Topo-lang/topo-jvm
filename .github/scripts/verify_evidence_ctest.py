@@ -19,15 +19,19 @@ executed = {case.attrib["name"] for case in cases}
 disabled = [name for name, test in tests.items() for prop in test.get("properties", [])
             if prop["name"] == "DISABLED" and prop["value"]]
 failed = [case.attrib["name"] for case in cases
-          if case.find("failure") is not None or case.find("error") is not None]
+          if case.find("failure") is not None or case.find("error") is not None
+          or case.attrib.get("status") == "fail"]
 skipped = [case.attrib["name"] for case in cases
-           if case.find("skipped") is not None or case.attrib.get("status", "run") != "run"]
+           if case.attrib["name"] not in failed and
+           (case.find("skipped") is not None or case.attrib.get("status") in ("notrun", "disabled", "skipped"))]
+unverified = [case.attrib["name"] for case in cases
+              if case.attrib["name"] not in failed + skipped and case.attrib.get("status", "run") != "run"]
 summary = {"registered": len(tests), "reported": len(cases),
-           "passed": len(cases) - len(set(failed + skipped)), "failed": failed,
-           "skipped": skipped, "disabled": disabled,
+           "passed": len(cases) - len(set(failed + skipped + unverified)), "failed": failed,
+           "skipped": skipped, "unknownStatusUnverified": unverified, "disabled": disabled,
            "missingRequired": sorted(required - tests.keys()),
            "missingResults": sorted(tests.keys() - executed)}
 Path("evidence-test-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 print(json.dumps(summary, indent=2))
-if required - tests.keys() or tests.keys() != executed or disabled or failed or skipped:
+if required - tests.keys() or tests.keys() != executed or disabled or failed or skipped or unverified:
     raise SystemExit("JVM evidence tests must be registered, executed and passing")
