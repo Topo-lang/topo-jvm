@@ -26,11 +26,49 @@ env:
   # topo-lang-java unpinned at promotion (2026-08-16): the L1 extractor
   # statement-shape fix is on main now.
   TOPO_LANG_JAVA_REF: main
+  TOPO_CLI_REF: main
 
 jobs:
+  resolve-upstream:
+    name: Resolve upstream source identities
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      core: ${{ steps.refs.outputs.core }}
+      lang: ${{ steps.refs.outputs.lang }}
+      java: ${{ steps.refs.outputs.java }}
+      cli: ${{ steps.refs.outputs.cli }}
+    steps:
+      - name: Resolve selected refs once for every platform
+        id: refs
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const selected = [
+              ['core', 'topo-core', process.env.TOPO_CORE_REF],
+              ['lang', 'topo-lang', process.env.TOPO_LANG_REF],
+              ['java', 'topo-lang-java', process.env.TOPO_LANG_JAVA_REF],
+              ['cli', 'topo-cli', process.env.TOPO_CLI_REF],
+            ];
+            const rows = [['Repository', 'Selected ref', 'Commit']];
+            for (const [output, repo, ref] of selected) {
+              const {data} = await github.rest.repos.getCommit({owner: 'Topo-lang', repo, ref});
+              if (!/^[0-9a-f]{40}$/.test(data.sha)) throw new Error(`Invalid commit identity for ${repo}`);
+              core.setOutput(output, data.sha);
+              core.info(`Topo-lang/${repo}: ${ref} -> ${data.sha}`);
+              rows.push([`Topo-lang/${repo}`, ref, data.sha]);
+            }
+            await core.summary.addHeading('Resolved upstream commits').addTable(rows).write();
+
   build-and-test:
     name: build + test (${{ matrix.os }})
+    needs: resolve-upstream
     runs-on: ${{ matrix.os }}
+    env:
+      TOPO_CORE_SHA: ${{ needs.resolve-upstream.outputs.core }}
+      TOPO_LANG_SHA: ${{ needs.resolve-upstream.outputs.lang }}
+      TOPO_LANG_JAVA_SHA: ${{ needs.resolve-upstream.outputs.java }}
     defaults:
       run:
         shell: bash
@@ -94,18 +132,13 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          # v6: the topo-lang-java dev branch TIP advanced (fix batch merged
-          # to dev); the key interpolates the ref, not the ref's content, so
-          # a cache saved against the pre-merge dev would keep serving the
-          # stale extractor.
-          key: topo-core-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-${{ matrix.os }}-v8-audit-runtime
+          # Match both the selected source commits and the bootstrap recipe.
+          key: topo-jvm-upstream-${{ matrix.os }}-${{ env.TOPO_CORE_SHA }}-${{ env.TOPO_LANG_SHA }}-${{ env.TOPO_LANG_JAVA_SHA }}-${{ hashFiles('.github/workflows/ci.yml', '.github/scripts/checkout-upstream.sh') }}
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch "${TOPO_CORE_REF}" \
-              https://github.com/topo-lang/topo-core.git \
-              "${RUNNER_TEMP}/topo-core-src"
+          bash .github/scripts/checkout-upstream.sh topo-core "${TOPO_CORE_SHA}" "${RUNNER_TEMP}/topo-core-src"
           cmake -S "${RUNNER_TEMP}/topo-core-src" \
                 -B "${RUNNER_TEMP}/topo-core-build" \
                 -G Ninja \
@@ -118,9 +151,7 @@ jobs:
       - name: Build & install topo-lang
         if: steps.topo-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch "${TOPO_LANG_REF}" \
-              https://github.com/topo-lang/topo-lang.git \
-              "${RUNNER_TEMP}/topo-lang-src"
+          bash .github/scripts/checkout-upstream.sh topo-lang "${TOPO_LANG_SHA}" "${RUNNER_TEMP}/topo-lang-src"
           cmake -S "${RUNNER_TEMP}/topo-lang-src" \
                 -B "${RUNNER_TEMP}/topo-lang-build" \
                 -G Ninja \
@@ -141,9 +172,7 @@ jobs:
       - name: Build & install topo-lang-java
         if: steps.topo-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch "${TOPO_LANG_JAVA_REF}" \
-              https://github.com/topo-lang/topo-lang-java.git \
-              "${RUNNER_TEMP}/topo-lang-java-src"
+          bash .github/scripts/checkout-upstream.sh topo-lang-java "${TOPO_LANG_JAVA_SHA}" "${RUNNER_TEMP}/topo-lang-java-src"
           cmake -S "${RUNNER_TEMP}/topo-lang-java-src" \
                 -B "${RUNNER_TEMP}/topo-lang-java-build" \
                 -G Ninja \
@@ -304,7 +333,13 @@ jobs:
     # No `if:` → runs on every workflow trigger (push to main, PR, dispatch,
     # nightly schedule).
     name: benchmark + e2e (${{ matrix.os }})
+    needs: resolve-upstream
     runs-on: ${{ matrix.os }}
+    env:
+      TOPO_CORE_SHA: ${{ needs.resolve-upstream.outputs.core }}
+      TOPO_LANG_SHA: ${{ needs.resolve-upstream.outputs.lang }}
+      TOPO_LANG_JAVA_SHA: ${{ needs.resolve-upstream.outputs.java }}
+      TOPO_CLI_SHA: ${{ needs.resolve-upstream.outputs.cli }}
     # Bounds a runaway instead of burning the 6-hour default. 60 (was 45) gives
     # the cold windows-2022 full-stack bootstrap headroom to build + populate its
     # caches on the first run; ubuntu/macos finish well under it.
@@ -367,31 +402,18 @@ jobs:
 
       # Upstream install prefix — the same chain as build-and-test PLUS
       # topo-cli. Separate cache key (…-cli-…) so it never collides with the
-      # build-and-test job's prefix. Keyed on the pinned refs like that job
-      # (branch-name, not SHA — same freshness tradeoff the repo already uses).
+      # build-and-test job's prefix. Every platform uses the same resolved SHAs.
       - name: Cache upstream topo install
         id: topo-cache
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/topo-install
-          # v5: re-clone+rebuild topo-cli@main to pick up the Windows
-          # .jar.exe output-suffix fix (Topo-lang/topo-cli#3). The cache is
-          # keyed on REF=main, so without a bump a hit would serve the stale
-          # buggy topo-cli install the prior windows run saved.
-          # v7: same dev-tip-advanced rotation as the build-and-test cache
-          # (lang-java dev moved under the interpolated ref).
-          # v8: topo-cli MAIN advanced at promotion (2026-08-16); the
-          # cli-main segment is a literal and cannot interpolate the ref's
-          # content — without a bump a hit would serve the pre-promotion
-          # topo-cli install.
-          key: topo-bench-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-cli-main-${{ matrix.os }}-v9-audit
+          key: topo-jvm-bench-upstream-${{ matrix.os }}-${{ env.TOPO_CORE_SHA }}-${{ env.TOPO_LANG_SHA }}-${{ env.TOPO_LANG_JAVA_SHA }}-${{ env.TOPO_CLI_SHA }}-${{ hashFiles('.github/workflows/ci.yml', '.github/scripts/checkout-upstream.sh') }}
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch "${TOPO_CORE_REF}" \
-              https://github.com/topo-lang/topo-core.git \
-              "${RUNNER_TEMP}/topo-core-src"
+          bash .github/scripts/checkout-upstream.sh topo-core "${TOPO_CORE_SHA}" "${RUNNER_TEMP}/topo-core-src"
           cmake -S "${RUNNER_TEMP}/topo-core-src" \
                 -B "${RUNNER_TEMP}/topo-core-build" \
                 -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -403,9 +425,7 @@ jobs:
       - name: Build & install topo-lang
         if: steps.topo-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch "${TOPO_LANG_REF}" \
-              https://github.com/topo-lang/topo-lang.git \
-              "${RUNNER_TEMP}/topo-lang-src"
+          bash .github/scripts/checkout-upstream.sh topo-lang "${TOPO_LANG_SHA}" "${RUNNER_TEMP}/topo-lang-src"
           cmake -S "${RUNNER_TEMP}/topo-lang-src" \
                 -B "${RUNNER_TEMP}/topo-lang-build" \
                 -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -425,9 +445,7 @@ jobs:
       - name: Build & install topo-lang-java
         if: steps.topo-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch "${TOPO_LANG_JAVA_REF}" \
-              https://github.com/topo-lang/topo-lang-java.git \
-              "${RUNNER_TEMP}/topo-lang-java-src"
+          bash .github/scripts/checkout-upstream.sh topo-lang-java "${TOPO_LANG_JAVA_SHA}" "${RUNNER_TEMP}/topo-lang-java-src"
           cmake -S "${RUNNER_TEMP}/topo-lang-java-src" \
                 -B "${RUNNER_TEMP}/topo-lang-java-build" \
                 -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -446,9 +464,7 @@ jobs:
       - name: Build & install topo-cli
         if: steps.topo-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch main \
-              https://github.com/topo-lang/topo-cli.git \
-              "${RUNNER_TEMP}/topo-cli-src"
+          bash .github/scripts/checkout-upstream.sh topo-cli "${TOPO_CLI_SHA}" "${RUNNER_TEMP}/topo-cli-src"
           cmake -S "${RUNNER_TEMP}/topo-cli-src" \
                 -B "${RUNNER_TEMP}/topo-cli-build" \
                 -G Ninja -DCMAKE_BUILD_TYPE=Release \
