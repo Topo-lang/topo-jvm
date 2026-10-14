@@ -98,7 +98,7 @@ jobs:
           # to dev); the key interpolates the ref, not the ref's content, so
           # a cache saved against the pre-merge dev would keep serving the
           # stale extractor.
-          key: topo-core-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-${{ matrix.os }}-v7-audit
+          key: topo-core-${{ env.TOPO_CORE_REF }}-lang-${{ env.TOPO_LANG_REF }}-langjava-${{ env.TOPO_LANG_JAVA_REF }}-${{ matrix.os }}-v8-audit-runtime
 
       - name: Build & install topo-core (zero-LLVM, lang-less)
         if: steps.topo-cache.outputs.cache-hit != 'true'
@@ -151,7 +151,10 @@ jobs:
                 -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/topo-install" \
                 -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/topo-install" \
                 -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
-                -DTOPO_LANG_JAVA_BUILD_TESTS=OFF
+                -DTOPO_LANG_JAVA_BUILD_TESTS=OFF \
+                -DTOPO_LANG_JAVA_ENABLE_JVM_BACKEND=ON \
+                -DTOPO_GRADLE_JAVA_HOME="${JAVA_HOME}" \
+                "-DTOPO_LANG_JAVA_GRADLE_ARGS=--no-daemon --console=plain"
           cmake --build "${RUNNER_TEMP}/topo-lang-java-build" --target install
 
       - name: Configure topo-jvm
@@ -209,7 +212,24 @@ jobs:
               export PATH="$(cygpath -u "$(dirname "$cxx")"):${PATH}"
             fi
           fi
-          ctest --test-dir build --output-on-failure --timeout 120
+          ctest --test-dir build --show-only=json-v1 > ctest-registered.json
+          ctest --test-dir build --output-on-failure --timeout 120 --no-tests=error --output-junit "${GITHUB_WORKSPACE}/ctest-results.xml"
+
+      - name: Require real JVM build-evidence tests
+        if: always()
+        run: python .github/scripts/verify_evidence_ctest.py
+
+      - name: Upload JVM evidence test results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: jvm-evidence-tests-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            ctest-registered.json
+            ctest-results.xml
+            evidence-test-summary.json
+            build/Testing/Temporary/LastTest.log
 
       - name: Install topo-jvm
         run: cmake --install build --prefix "${RUNNER_TEMP}/jvm-install"

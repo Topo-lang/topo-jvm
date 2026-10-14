@@ -124,7 +124,9 @@ endif()
 # (Without this pre-flight the deploy lived after the subdir was added,
 # putting TARGET_FILE_DIR's referenced target in a different scope and
 # triggering the CMake "No target" generator-time error.)
-if(TOPO_JVM_BUILD_TOOLS AND TOPO_JVM_BUILD_E2E)
+# Unit-level build-evidence tests also execute the real compiler/transform/JAR
+# chain and need the runtime even when the broader E2E suites are disabled.
+if(TOPO_JVM_BUILD_TOOLS AND (TOPO_JVM_BUILD_E2E OR TOPO_JVM_BUILD_TESTS))
     find_path(TOPO_LANG_JAVA_RUNTIME_JAR_DIR
         NAMES topo-runtime.jar
         PATHS ${CMAKE_PREFIX_PATH}

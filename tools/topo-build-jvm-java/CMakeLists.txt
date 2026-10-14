@@ -24,7 +24,7 @@ install(TARGETS topo-build-jvm-java
 # deploy-topo-runtime-java POST_BUILD hook.
 #
 # Gated by TOPO_JVM_DEPLOY_RUNTIME_JAR (set by the root CMakeLists when
-# TOPO_JVM_BUILD_E2E=ON AND topo-lang-java's runtime.jar was resolved by
+# tests or E2E are enabled AND topo-lang-java's runtime.jar was resolved by
 # find_package). Lives in this subdirectory so TARGET_FILE_DIR resolves
 # in the same scope as the executable target.
 if(TOPO_JVM_DEPLOY_RUNTIME_JAR AND _RUNTIME_JAR_SRC)
