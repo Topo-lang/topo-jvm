@@ -457,6 +457,12 @@ jobs:
                 -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
           cmake --build "${RUNNER_TEMP}/topo-cli-build" --target install
 
+      # check-clean invokes topo-check directly, outside E2eHarness's JVM
+      # environment setup. Its Java AST extractor must also be discoverable
+      # when the installed prefix came from the cache.
+      - name: Add installed analysis tools to PATH
+        run: echo "${RUNNER_TEMP}/topo-install/bin" >> "$GITHUB_PATH"
+
       - name: Configure topo-jvm (e2e + benchmarks)
         run: |
           # On manual dispatch, also build the timing benchmarks so the

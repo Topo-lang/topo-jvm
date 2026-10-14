@@ -227,8 +227,8 @@ set_tests_properties(e2e.jvm_tomlswap PROPERTIES
 # symbols are listed in each project's [completeness] ignores, so any new
 # undeclared symbol (or dangling declaration) fails the gate. Projects with
 # `check = "off"` in [build] are skipped — that setting is the explicit
-# opt-out. topo-check runs L1-only here (regex extraction, no javac), cheap
-# enough for the deterministic e2e gate.
+# opt-out. Java checking uses the Java 25 AST extractor installed by
+# topo-lang-java; its launcher must be on PATH when CTest invokes topo-check.
 #
 # RESOURCE_LOCK pairs each guard with the equivalence cases on the same
 # project: those swap Topo.toml in place (TopoTomlSwap RAII), and a
@@ -236,6 +236,17 @@ set_tests_properties(e2e.jvm_tomlswap PROPERTIES
 # Single "e2e" label — see the LABELS mis-parse note above; add_test paths
 # parse lists fine, but one label is all this guard needs.
 if(TARGET topo::cli::topo-check)
+    # Match the runtime classpath staged for the real JVM compiler. Keep the
+    # source selection in each Topo.toml; this ordinary-check model supplies
+    # only the shared Java level and runtime dependency.
+    if(NOT TOPO_LANG_JAVA_RUNTIME_JAR_DIR OR NOT EXISTS "${_RUNTIME_JAR_SRC}")
+        message(FATAL_ERROR "JVM benchmark checks require the installed topo-runtime.jar")
+    endif()
+    string(REPLACE "\\" "\\\\" _check_clean_runtime "${_RUNTIME_JAR_SRC}")
+    string(REPLACE "\"" "\\\"" _check_clean_runtime "${_check_clean_runtime}")
+    set(_check_clean_model "${CMAKE_CURRENT_BINARY_DIR}/benchmark-check-java-project.json")
+    file(WRITE "${_check_clean_model}"
+        "{\"sourceLevel\":\"25\",\"classpath\":[\"${_check_clean_runtime}\"]}\n")
     file(GLOB _check_clean_tomls "${PROJECT_SOURCE_DIR}/benchmarks/*/Topo.toml")
     foreach(_toml IN LISTS _check_clean_tomls)
         file(READ "${_toml}" _toml_content)
@@ -245,7 +256,8 @@ if(TARGET topo::cli::topo-check)
         get_filename_component(_proj_dir "${_toml}" DIRECTORY)
         get_filename_component(_proj "${_proj_dir}" NAME)
         add_test(NAME e2e.check_clean.${_proj}
-            COMMAND $<TARGET_FILE:topo::cli::topo-check> --project "${_proj_dir}")
+            COMMAND $<TARGET_FILE:topo::cli::topo-check> --project "${_proj_dir}"
+                --java-project "${_check_clean_model}")
         set_tests_properties(e2e.check_clean.${_proj} PROPERTIES
             LABELS "e2e"
             RESOURCE_LOCK "topo_e2e_jvm_${_proj}"
@@ -253,6 +265,8 @@ if(TARGET topo::cli::topo-check)
     endforeach()
     unset(_check_clean_tomls)
     unset(_toml_content)
+    unset(_check_clean_model)
+    unset(_check_clean_runtime)
 else()
     message(STATUS "topo-jvm e2e: topo::cli::topo-check not found — "
         "benchmark check-clean guard SKIPPED.")
