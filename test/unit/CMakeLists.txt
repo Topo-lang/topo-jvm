@@ -26,3 +26,16 @@ topo_set_compiler_flags(topo-build-jvm-java-input-trust-tests)
 
 gtest_discover_tests(topo-build-jvm-java-input-trust-tests
     PROPERTIES LABELS "toolchain\;jvm" TIMEOUT 30)
+
+add_executable(topo-build-jvm-java-evidence-tests JvmBuildEvidenceTest.cpp)
+target_link_libraries(topo-build-jvm-java-evidence-tests PRIVATE
+    topo::lang-java::TopoJavaDriver topo::core::TopoBuildLib GTest::gtest_main)
+target_compile_definitions(topo-build-jvm-java-evidence-tests PRIVATE
+    TOPO_BUILD_JVM_JAVA_EXE="$<TARGET_FILE:topo-build-jvm-java>")
+add_dependencies(topo-build-jvm-java-evidence-tests topo-build-jvm-java)
+if(TARGET topo-transform-jvm)
+    add_dependencies(topo-build-jvm-java-evidence-tests topo-transform-jvm)
+endif()
+topo_set_compiler_flags(topo-build-jvm-java-evidence-tests)
+gtest_discover_tests(topo-build-jvm-java-evidence-tests
+    PROPERTIES LABELS "toolchain;jvm;provenance" TIMEOUT 180)

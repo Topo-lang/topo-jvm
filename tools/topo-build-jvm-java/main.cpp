@@ -9,6 +9,7 @@
 //   4. Package .class files into output JAR
 
 #include "JavaDriver.h"
+#include "JvmEvidence.h"
 
 #include "topo/Build/BackendProtocol.h"
 #include "topo/Build/PassConfig.h"
@@ -18,6 +19,7 @@
 #include "topo/Platform/SharedLibrary.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -116,6 +118,10 @@ static bool validateJvmArgs(const std::vector<std::string>& jvmArgs) {
 }
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string(argv[1]) == "--evidence-capabilities") {
+        std::cout << nlohmann::json{{"evidence", {{"protocolVersion", 1}, {"modes", {"commands"}}, {"checkModel", true}}}}.dump() << "\n";
+        return 0;
+    }
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <request.json> [--keep-metadata]\n"
                   << "  Backend tool invoked by topo-build. Not intended for direct use.\n";
@@ -123,7 +129,11 @@ int main(int argc, char* argv[]) {
     }
 
     // Parse arguments
-    std::string requestPath = argv[1];
+    bool checkModel = std::string(argv[1]) == "--check-model";
+    if (checkModel && (argc != 5 || std::string(argv[3]) != "--output")) {
+        std::cerr << "Usage: --check-model REQUEST --output MODEL\n"; return 1;
+    }
+    std::string requestPath = checkModel ? argv[2] : argv[1];
     bool keepMetadata = false;
     for (int i = 2; i < argc; ++i) {
         if (std::string(argv[i]) == "--keep-metadata") keepMetadata = true;
@@ -142,6 +152,10 @@ int main(int argc, char* argv[]) {
     if (!topo::build::deserializeBackendRequest(jsonStr, req)) {
         std::cerr << "error: failed to parse backend request JSON\n";
         return 1;
+    }
+    std::string evidenceError;
+    if (!topo::build::validateEvidenceCapability(req, {"commands"}, evidenceError)) {
+        std::cerr << "error: " << evidenceError << "\n"; return 1;
     }
 
     // Extract JVM-specific fields from backendExtras
@@ -168,9 +182,75 @@ int main(int argc, char* argv[]) {
         jvmArgs.push_back("jdk.incubator.vector");
     }
     std::string userClasspath;
+    std::vector<std::string> classpath;
     if (req.backendExtras.contains("classpath")) {
-        auto cp = req.backendExtras["classpath"].get<std::vector<std::string>>();
-        userClasspath = joinClasspath(cp);
+        classpath = req.backendExtras["classpath"].get<std::vector<std::string>>();
+    }
+    std::string exeDir = topo::platform::getExecutableDir();
+    fs::path runtimeJar = fs::path(exeDir) / "topo-runtime.jar";
+    if (fs::exists(runtimeJar)) classpath.insert(classpath.begin(), runtimeJar.string());
+    userClasspath = joinClasspath(classpath);
+    if (topo::jvm::validateClasspath(userClasspath) != topo::jvm::JavaInputError::None) {
+        std::cerr << "error: invalid Java classpath\n"; return 1;
+    }
+    auto makeCheckModel = [&]() {
+        nlohmann::json dependencies = nlohmann::json::array();
+        for (const auto& path : classpath) {
+            bool runtime = fs::weakly_canonical(path) == fs::weakly_canonical(runtimeJar);
+            dependencies.push_back({{"path", fs::weakly_canonical(path).string()},
+                {"kind", runtime ? "external" : "unknown"}, {"coordinate", runtime ? "dev.topo:topo-runtime" : ""}, {"version", ""}});
+        }
+        nlohmann::json model = {{"sourceLevel", targetVersion}, {"files", topo::jvm::collectJavaSourceFiles(req.sources)},
+            {"sourcepath", nlohmann::json::array()}, {"classpath", nlohmann::json::array()}, {"dependencies", dependencies}};
+        auto selectedJavac = topo::jvm::resolveJavaTool("javac", javaHome);
+        auto resolvedJavac = topo::platform::findSpawnableOnPath(selectedJavac);
+        if (!resolvedJavac.empty()) selectedJavac = resolvedJavac;
+        auto selectedJdk = fs::weakly_canonical(selectedJavac).parent_path().parent_path();
+        model["compiler"] = {{"javaHome", selectedJdk.string()}, {"targetRelease", targetVersion}};
+        for (const auto& path : classpath) model["classpath"].push_back(fs::weakly_canonical(path).string());
+        std::vector<std::string> inputs = model.at("files").get<std::vector<std::string>>();
+        inputs.insert(inputs.end(), classpath.begin(), classpath.end());
+        // Capture each selected tool without executing it. A pure model probe
+        // may use an inert javac placeholder; normal builds need all tools.
+        for (const auto& name : {"javac", "java", "jar", "javap"}) {
+            auto path = topo::jvm::resolveJavaTool(name, javaHome);
+            auto resolved = topo::platform::findSpawnableOnPath(path);
+            if (!resolved.empty()) path = resolved;
+            if (fs::is_regular_file(path)) inputs.push_back(path);
+        }
+        for (const auto& name : {"release", "lib/modules"})
+            if (fs::is_regular_file(selectedJdk / name)) inputs.push_back((selectedJdk / name).string());
+        const auto transformer = fs::path(exeDir) / "topo-transform.jar";
+        if (fs::is_regular_file(transformer)) inputs.push_back(transformer.string());
+        model["inputDigests"] = JvmEvidence::modelInputDigests(inputs);
+        auto recipe = nlohmann::json::parse(topo::build::serializeBackendRequest(req));
+        recipe.erase("checkModelPath"); recipe.erase("checkModelSha256");
+        model["backendRecipe"] = std::move(recipe);
+        model["environment"] = nlohmann::json::object();
+        for (const char* name : {"JAVA_HOME", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "JDK_JAVAC_OPTIONS", "_JAVA_OPTIONS", "CLASSPATH"})
+            if (const char* value = std::getenv(name)) model["environment"][name] = value;
+        return model;
+    };
+    nlohmann::json actualCheckModel;
+    if (checkModel || !req.checkModelPath.empty() || !req.checkModelSha256.empty()) {
+        try { actualCheckModel = makeCheckModel(); }
+        catch (const std::exception& error) {
+            std::cerr << "error: cannot construct Java check model: " << error.what() << "\n"; return 1;
+        }
+    }
+    if (checkModel) return writeJsonFile(argv[4], actualCheckModel) ? 0 : 1;
+    const std::string& checkModelPath = req.checkModelPath;
+    const std::string& checkModelSha256 = req.checkModelSha256;
+    if (!checkModelPath.empty() || !checkModelSha256.empty()) {
+        if (checkModelPath.empty() || !topo::build::evidence::validDigest(checkModelSha256) ||
+            topo::dist::sha256File(checkModelPath) != checkModelSha256) {
+            std::cerr << "error: checked Java project model digest does not match\n"; return 1;
+        }
+        std::ifstream modelFile(checkModelPath);
+        auto checkedModel = nlohmann::json::parse(modelFile, nullptr, false);
+        if (checkedModel.is_discarded() || checkedModel != actualCheckModel) {
+            std::cerr << "error: checked Java project model differs from actual compiler inputs\n"; return 1;
+        }
     }
 
     fs::path tempDir(req.tempDir);
@@ -183,10 +263,25 @@ int main(int argc, char* argv[]) {
     }
 
     // Locate topo-transform.jar relative to this executable
-    std::string exeDir = topo::platform::getExecutableDir();
     fs::path transformJar = fs::path(exeDir) / "topo-transform.jar";
     if (!fs::exists(transformJar)) {
         std::cerr << "error: topo-transform.jar not found at '" << transformJar.string() << "'\n";
+        return 1;
+    }
+    JvmEvidence evidence(req, fs::absolute(requestPath).string(), javaHome, exeDir, classpath);
+    if (!checkModelPath.empty()) evidence.addInput(checkModelPath);
+
+    // Keep the review model at a stable path, while every compilation gets
+    // an empty output tree. Reusing class directories retains removed classes.
+    fs::path stageDir;
+    for (int attempt = 0; attempt < 16; ++attempt) {
+        auto candidate = tempDir / ("jvm-stage-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()) + "-" + std::to_string(attempt));
+        if (fs::create_directory(candidate, ec)) { stageDir = candidate; break; }
+        if (ec) break;
+    }
+    if (stageDir.empty()) {
+        std::cerr << "error: cannot create a fresh Java compilation directory: " << ec.message() << "\n";
         return 1;
     }
 
@@ -240,15 +335,8 @@ int main(int argc, char* argv[]) {
     // ================================================================
     std::cerr << "[1/4] Compiling Java sources...\n";
 
-    // Add SDK runtime jar to classpath so user code can import dev.topo.* classes
-    fs::path runtimeJar = fs::path(exeDir) / "topo-runtime.jar";
-    if (fs::exists(runtimeJar)) {
-        char sep = topo::platform::IsWindows ? ';' : ':';
-        if (userClasspath.empty())
-            userClasspath = runtimeJar.string();
-        else
-            userClasspath = runtimeJar.string() + sep + userClasspath;
-    } else {
+    // The same ordered runtime/user classpath is exported by --check-model.
+    if (!fs::exists(runtimeJar)) {
         if (req.config.parallelCfg.isEnabled() ||
             req.config.dataLayoutCfg.isEnabled() ||
             req.config.typeNarrowingCfg.isEnabled() ||
@@ -260,11 +348,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    fs::path classDir = tempDir / "classes";
+    fs::path classDir = stageDir / "classes";
     auto compileResult =
         topo::jvm::compileJava(req.sources, userClasspath, classDir.string(),
                                targetVersion, req.config.buildMode,
-                               javaHome, req.verbose);
+                               javaHome, req.verbose, evidence.stageOptions((tempDir / "javac-evidence.json").string()));
+    if (!evidence.adopt(compileResult.evidencePath)) return 1;
 
     if (compileResult.exitCode != 0) {
         std::cerr << "error: javac compilation failed (exit " << compileResult.exitCode << ")\n";
@@ -291,7 +380,8 @@ int main(int argc, char* argv[]) {
         verifyArgs.push_back("--config");
         verifyArgs.push_back(configPath.string());
 
-        auto verifyResult = topo::platform::runProcess(java, verifyArgs, req.verbose);
+        auto verifyResult = evidence.run("jvm-verify", java, verifyArgs,
+            {classDir.string(), transformJar.string(), metadataPath.string(), configPath.string()}, {}, req.verbose);
         if (verifyResult.exitCode != 0) {
             std::cerr << "error: bytecode verification failed (exit " << verifyResult.exitCode << ")\n";
             if (!req.config.warnOnly) return 1;
@@ -304,7 +394,7 @@ int main(int argc, char* argv[]) {
     // ================================================================
     std::cerr << "[3/4] Applying bytecode transforms...\n";
 
-    fs::path transformedDir = tempDir / "transformed";
+    fs::path transformedDir = stageDir / "transformed";
     {
         std::string java = topo::jvm::resolveJavaTool("java", javaHome);
         std::vector<std::string> transformArgs;
@@ -332,7 +422,9 @@ int main(int argc, char* argv[]) {
         transformArgs.push_back("--sidecar-dir");
         transformArgs.push_back(sidecarDir.string());
 
-        auto transformResult = topo::platform::runProcess(java, transformArgs, req.verbose);
+        auto transformResult = evidence.run("jvm-transform", java, transformArgs,
+            {classDir.string(), transformJar.string(), metadataPath.string(), configPath.string()},
+            {transformedDir.string(), sidecarDir.string()}, req.verbose);
         if (transformResult.exitCode != 0) {
             std::cerr << "error: bytecode transformation failed (exit " << transformResult.exitCode << ")\n";
             return 1;
@@ -342,12 +434,21 @@ int main(int argc, char* argv[]) {
     // ================================================================
     // Step 3b: Bundle SDK runtime classes into transformed output
     // ================================================================
+    fs::path packageDir = transformedDir;
     {
         fs::path runtimeJar = fs::path(exeDir) / "topo-runtime.jar";
         if (fs::exists(runtimeJar)) {
             std::string jarTool = topo::jvm::resolveJavaTool("jar", javaHome);
             std::vector<std::string> extractArgs = {"xf", runtimeJar.string()};
-            auto extractResult = topo::platform::runProcessCapture(jarTool, extractArgs, transformedDir.string());
+            if (evidence.enabled) {
+                // Preserve the transformer outputs as evidence inputs while
+                // the runtime bundle writes a distinct next-stage directory.
+                packageDir = stageDir / "bundled";
+                fs::copy(transformedDir, packageDir, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+                if (ec) { std::cerr << "error: cannot stage runtime bundle: " << ec.message() << "\n"; return 1; }
+            }
+            auto extractResult = evidence.run("jvm-runtime-bundle", jarTool, extractArgs,
+                {runtimeJar.string(), transformedDir.string()}, {packageDir.string()}, req.verbose, packageDir.string());
             if (extractResult.exitCode != 0 && req.verbose) {
                 std::cerr << "      warning: failed to extract SDK runtime\n";
             }
@@ -368,13 +469,14 @@ int main(int argc, char* argv[]) {
         postVerifyArgs.push_back(transformJar.string());
         postVerifyArgs.push_back("--post-verify");
         postVerifyArgs.push_back("--classes");
-        postVerifyArgs.push_back(transformedDir.string());
+        postVerifyArgs.push_back(packageDir.string());
         postVerifyArgs.push_back("--metadata");
         postVerifyArgs.push_back(metadataPath.string());
         postVerifyArgs.push_back("--config");
         postVerifyArgs.push_back(configPath.string());
 
-        auto postVerifyResult = topo::platform::runProcessCapture(java, postVerifyArgs, req.verbose);
+        auto postVerifyResult = evidence.capture("jvm-post-verify", java, postVerifyArgs,
+            {packageDir.string(), transformJar.string(), metadataPath.string(), configPath.string()}, {}, req.verbose);
         if (postVerifyResult.exitCode != 0) {
             std::cerr << "error: post-transform verification failed\n";
             if (!postVerifyResult.stdoutOutput.empty())
@@ -441,7 +543,8 @@ int main(int argc, char* argv[]) {
                         if (!it->is_regular_file(iterEc) || it->path().extension() != ".class")
                             continue;
                         std::vector<std::string> javapArgs = {"-p", "-s", it->path().string()};
-                        auto javapResult = topo::platform::runProcessCapture(javapTool, javapArgs, false);
+                        auto javapResult = evidence.capture("javap-main-discovery", javapTool, javapArgs,
+                            {it->path().string()}, {}, false);
                         if (javapResult.exitCode == 0 &&
                             javapResult.stdoutOutput.find("([Ljava/lang/String;)V") != std::string::npos) {
                             // Derive fully-qualified class name from path relative to classDir
@@ -464,7 +567,9 @@ int main(int argc, char* argv[]) {
     }
 
     auto packageResult =
-        topo::jvm::packageJar(transformedDir.string(), req.outputPath, mainClass, javaHome, req.verbose);
+        topo::jvm::packageJar(packageDir.string(), req.outputPath, mainClass, javaHome, req.verbose,
+            evidence.stageOptions((tempDir / "jar-evidence.json").string()));
+    if (!evidence.adopt(packageResult.evidencePath)) return 1;
 
     if (packageResult.exitCode != 0) {
         std::cerr << "error: JAR packaging failed (exit " << packageResult.exitCode << ")\n";
